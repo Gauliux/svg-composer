@@ -194,6 +194,15 @@ export function PaletteEditor({
         />
       )}
 
+      <button
+        type="button"
+        onClick={() => onCreateScheme(duplicateAsCustom(activeScheme))}
+        className="inline-flex w-full items-center justify-center gap-1 rounded-lg border border-slate-200 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+      >
+        <Plus className="h-3.5 w-3.5" />
+        Создать на основе текущей
+      </button>
+
       {/* 4 фоновых слота */}
       <div>
         <span className="mb-1 block text-[11px] font-medium text-slate-500">
@@ -322,15 +331,6 @@ export function PaletteEditor({
           </div>
         </div>
       )}
-
-      <button
-        type="button"
-        onClick={() => onCreateScheme(duplicateAsCustom(activeScheme))}
-        className="inline-flex w-full items-center justify-center gap-1 rounded-lg border border-slate-200 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
-      >
-        <Plus className="h-3.5 w-3.5" />
-        Создать на основе текущей
-      </button>
 
       {importError && (
         <div className="rounded-lg bg-red-50 p-2 text-[11px] text-red-700">
