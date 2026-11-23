@@ -1,0 +1,186 @@
+{
+  "profiles": ["S", "L"],
+  "appearances": ["main", "background"],
+  "colorMapping": {
+    "#D7CDF5": "BG_1",
+    "#AA9BF0": "BG_2",
+    "#7864D7": "BG_3",
+    "#181817": "BG_4",
+    "#F9ECB0": "OBJ_1",
+    "#F9A3AA": "OBJ_2",
+    "#FFE3E1": "OBJ_3",
+    "#FFFFFF": "OBJ_4"
+  },
+  "assets": [
+    {
+      "id": "A01",
+      "title": "Открытая книга",
+      "description": "Открытая книга для тем обучения, чтения и базы знаний",
+      "tags": ["книга", "знания", "обучение", "чтение", "образование", "документация"],
+      "category": "education",
+      "variants": {
+        "S": {
+          "main": "A01/S/main.svg",
+          "background": "A01/S/background.svg"
+        },
+        "L": {
+          "main": "A01/L/main.svg",
+          "background": "A01/L/background.svg"
+        }
+      }
+    },
+    {
+      "id": "A02",
+      "title": "Смартфон с пазлами на экране",
+      "description": "Мобильное устройство с модульными блоками на дисплее",
+      "tags": ["смартфон", "телефон", "приложение", "технологии", "интеграция", "модуль"],
+      "category": "tech",
+      "variants": {
+        "S": {
+          "main": "A02/S/main.svg",
+          "background": "A02/S/background.svg"
+        },
+        "L": {
+          "main": "A02/L/main.svg",
+          "background": "A02/L/background.svg"
+        }
+      }
+    },
+    {
+      "id": "A03",
+      "title": "Два элемента пазла",
+      "description": "Соединённые части пазла как символ совместимости и командной работы",
+      "tags": ["пазл", "решение", "логика", "команда", "соединение", "идея"],
+      "category": "concept",
+      "variants": {
+        "S": {
+          "main": "A03/S/main.svg",
+          "background": "A03/S/background.svg"
+        },
+        "L": {
+          "main": "A03/L/main.svg",
+          "background": "A03/L/background.svg"
+        }
+      }
+    },
+    {
+      "id": "A04",
+      "title": "Круглая композиция с замком",
+      "description": "Иконка замка для обозначения защиты, приватности и надёжности",
+      "tags": ["замок", "безопасность", "защита", "приватность", "доступ", "надёжность"],
+      "category": "security",
+      "variants": {
+        "S": {
+          "main": "A04/S/main.svg",
+          "background": "A04/S/background.svg"
+        },
+        "L": {
+          "main": "A04/L/main.svg",
+          "background": "A04/L/background.svg"
+        }
+      }
+    },
+    {
+      "id": "A05",
+      "title": "Наушники",
+      "description": "Беспроводные или студийные наушники для аудио, фокуса и общения",
+      "tags": ["наушники", "звук", "музыка", "подкаст", "фокус", "поддержка"],
+      "category": "lifestyle",
+      "variants": {
+        "S": {
+          "main": "A05/S/main.svg",
+          "background": "A05/S/background.svg"
+        },
+        "L": {
+          "main": "A05/L/main.svg",
+          "background": "A05/L/background.svg"
+        }
+      }
+    },
+    {
+      "id": "A06",
+      "title": "Настольная лампа",
+      "description": "Настольный светильник, символизирующий озарение, работу и уют",
+      "tags": ["лампа", "свет", "идея", "работа", "вдохновение", "офис"],
+      "category": "workspace",
+      "variants": {
+        "S": {
+          "main": "A06/S/main.svg",
+          "background": "A06/S/background.svg"
+        },
+        "L": {
+          "main": "A06/L/main.svg",
+          "background": "A06/L/background.svg"
+        }
+      }
+    },
+    {
+      "id": "A07",
+      "title": "Букет тюльпанов в вазе",
+      "description": "Цветы в вазе для тем гармонии, заботы, праздника и уюта",
+      "tags": ["цветы", "тюльпаны", "ваза", "уют", "праздник", "природа"],
+      "category": "lifestyle",
+      "variants": {
+        "S": {
+          "main": "A07/S/main.svg",
+          "background": "A07/S/background.svg"
+        },
+        "L": {
+          "main": "A07/L/main.svg",
+          "background": "A07/L/background.svg"
+        }
+      }
+    },
+    {
+      "id": "A08",
+      "title": "Кошелёк",
+      "description": "Кошелёк с деньгами или картами для финансовых и платёжных тем",
+      "tags": ["кошелёк", "финансы", "деньги", "оплата", "бюджет", "доход"],
+      "category": "finance",
+      "variants": {
+        "S": {
+          "main": "A08/S/main.svg",
+          "background": "A08/S/background.svg"
+        },
+        "L": {
+          "main": "A08/L/main.svg",
+          "background": "A08/L/background.svg"
+        }
+      }
+    },
+    {
+      "id": "A09",
+      "title": "Блокнот / записная книжка",
+      "description": "Ежедневник для заметок, планирования, задач и организации работы",
+      "tags": ["блокнот", "заметки", "планирование", "задачи", "документы", "записи"],
+      "category": "workspace",
+      "variants": {
+        "S": {
+          "main": "A09/S/main.svg",
+          "background": "A09/S/background.svg"
+        },
+        "L": {
+          "main": "A09/L/main.svg",
+          "background": "A09/L/background.svg"
+        }
+      }
+    },
+    {
+      "id": "A10",
+      "title": "Ручка",
+      "description": "Письменная ручка для творчества, подписи документов и заметок",
+      "tags": ["ручка", "письмо", "творчество", "редактирование", "подпись", "офис"],
+      "category": "workspace",
+      "variants": {
+        "S": {
+          "main": "A10/S/main.svg",
+          "background": "A10/S/background.svg"
+        },
+        "L": {
+          "main": "A10/L/main.svg",
+          "background": "A10/L/background.svg"
+        }
+      }
+    }
+  ]
+}
