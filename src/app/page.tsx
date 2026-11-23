@@ -25,7 +25,10 @@ import {
   saveCompositionToStorage,
   saveCustomColorSchemes,
 } from '@/lib/storage';
-import { buildDeterministicLayout } from '@/lib/layout';
+import {
+  buildDeterministicLayout,
+  getCanonicalLibraryScale,
+} from '@/lib/layout';
 import { AiComposeResult } from '@/lib/ollama';
 import {
   CanvasEditor,
@@ -168,69 +171,36 @@ export default function HomePage() {
   const handleAddSingleAsset = useCallback(
     (assetId: string) => {
       const asset = assetsMap.get(assetId);
-      if (!asset) return;
+      if (!asset || asset.category === 'background') return;
 
-      const isBackdropAsset = asset.category === 'background';
-      const objectAssets = assets.filter((a) => a.category !== 'background');
-      const maxRef = Math.max(
-        ...objectAssets.map((a) => a.referenceSize),
-        isBackdropAsset ? 1 : asset.referenceSize,
-        1
-      );
-      const minSide = Math.min(doc.artboard.width, doc.artboard.height);
-
-      const baseScale = isBackdropAsset
-        ? Math.round(
-            (Math.max(doc.artboard.width, doc.artboard.height) /
-              Math.max(asset.referenceSize, 1)) *
-              10000
-          ) / 10000
-        : Math.round(((minSide * 0.45) / maxRef) * 10000) / 10000;
-
+      const baseScale = getCanonicalLibraryScale(assets, doc.artboard);
       const maxZ = doc.items.reduce((m, i) => Math.max(m, i.zIndex), -1);
       const newId =
         typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
           ? crypto.randomUUID()
           : `inst_${assetId}_${Date.now()}`;
 
-      const offset = (doc.items.length % 5) * 20;
+      const offset = (doc.items.length % 5) * 24;
       const newItem: CanvasItem = {
         instanceId: newId,
         assetId,
-        appearance: isBackdropAsset ? 'background' : 'main',
-        layoutRole: isBackdropAsset
-          ? 'backdrop'
-          : doc.items.length === 0
-            ? 'hero'
-            : 'supporting',
-        x: isBackdropAsset
-          ? doc.artboard.width / 2
-          : doc.artboard.width / 2 + offset,
-        y: isBackdropAsset
-          ? doc.artboard.height / 2
-          : doc.artboard.height / 2 + offset,
+        appearance: 'main',
+        layoutRole: doc.items.length === 0 ? 'hero' : 'supporting',
+        x: doc.artboard.width / 2 + offset,
+        y: doc.artboard.height / 2 + offset,
         scale: baseScale,
         rotation: 0,
-        zIndex: isBackdropAsset ? 0 : maxZ + 1,
+        zIndex: maxZ + 1,
       };
 
-      setDoc((prev) => {
-        const nextItems = isBackdropAsset
-          ? [
-              newItem,
-              ...prev.items.map((item, idx) => ({ ...item, zIndex: idx + 1 })),
-            ]
-          : [...prev.items, newItem];
-
-        return {
-          ...prev,
-          items: nextItems,
-          updatedAt: Date.now(),
-        };
-      });
+      setDoc((prev) => ({
+        ...prev,
+        items: [...prev.items, newItem],
+        updatedAt: Date.now(),
+      }));
       setSelectedInstanceId(newId);
     },
-    [assets, assetsMap, doc.artboard.height, doc.artboard.width, doc.items]
+    [assets, assetsMap, doc.artboard, doc.items]
   );
 
   // Сценарий 1: AI-подбор по метафоре
@@ -239,6 +209,7 @@ export default function HomePage() {
       const placed = buildDeterministicLayout(result.items, assetsMap, {
         artboard: doc.artboard,
         detailProfile: doc.detailProfile,
+        allAssets: assets,
       });
       setDoc((prev) => ({
         ...prev,
@@ -253,7 +224,7 @@ export default function HomePage() {
       setSelectedInstanceId(null);
       notify(`Собрана композиция из ${placed.length} объектов`);
     },
-    [assetsMap, doc.artboard, doc.detailProfile, notify]
+    [assets, assetsMap, doc.artboard, doc.detailProfile, notify]
   );
 
   // Сценарий 2: Автосборка из выбранных в библиотеке элементов
@@ -265,7 +236,8 @@ export default function HomePage() {
         {
           artboard: doc.artboard,
           detailProfile: doc.detailProfile,
-        }
+	  allAssets: assets,
+        },
       );
       setDoc((prev) => ({
         ...prev,
@@ -275,7 +247,7 @@ export default function HomePage() {
       setSelectedInstanceId(null);
       notify(`Размещено компонентов: ${placed.length}`);
     },
-    [assetsMap, doc.artboard, doc.detailProfile, notify]
+    [assets, assetsMap, doc.artboard, doc.detailProfile, notify]
   );
 
   // Обновление трансформаций из Fabric Canvas
@@ -381,7 +353,8 @@ export default function HomePage() {
       const oldH = prev.artboard.height;
       if (oldW === newW && oldH === newH) return prev;
 
-      const k = Math.min(newW / oldW, newH / oldH);
+      // Обратимый коэффициент по меньшей стороне Artboard (не уменьшает объекты при круговом переключении)
+      const k = Math.min(newW, newH) / Math.min(oldW, oldH);
       const updatedItems = prev.items.map((item) => ({
         ...item,
         x: Math.round((newW / 2 + (item.x - oldW / 2) * k) * 100) / 100,

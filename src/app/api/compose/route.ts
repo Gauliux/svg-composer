@@ -28,18 +28,18 @@ const requestBodySchema = z.object({
 
 function buildCompactSystemPrompt(): string {
   return [
-    'You are an illustration art director.',
-    'Select 3 to 5 existing asset IDs from the provided Catalog that best match the user metaphor or title.',
+    'You are an isometric illustration art director.',
+    'Select 2 to 4 existing asset IDs from Catalog that form a cohesive scene matching the user metaphor.',
     'Assign each item:',
-    '- layoutRole: "hero" (1 main focal item), "supporting" (1-3 secondary items), or "backdrop" (0-2 background prop items).',
-    '- appearance: "main" (colored foreground) or "background" (monochrome background).',
-    'Optional: if Backdrops list is provided, choose one "backdropAssetId" from it or null for a plain solid fill.',
+    '- layoutRole: "hero" (1 main focal item), "supporting" (1-2 secondary items), or "backdrop" (0-1 background object placed behind hero).',
+    '- appearance: "main" (colored foreground) or "background" (monochrome object behind main items).',
+    '- placement: "center" | "left" | "right" | "top-left" | "top-right" | "bottom-left" | "bottom-right" | "on-top" (use "on-top" when a small object naturally rests over a book/notebook/large surface).',
+    'Optional: if Backdrops list is provided, choose one "backdropAssetId" or null.',
     'Rules:',
     '1. ONLY use assetId values that exist in Catalog.',
     '2. ONLY use backdropAssetId from Backdrops (or null).',
-    '3. Do NOT invent new IDs, SVG code, or coordinates.',
-    '4. Avoid duplicate assetId entries.',
-    '5. Return valid JSON strictly matching: {"backdropAssetId":"...|null","items":[{"assetId":"...","layoutRole":"hero|supporting|backdrop","appearance":"main|background"}]}',
+    '3. Avoid duplicate assetId entries.',
+    '4. Return valid JSON strictly matching: {"backdropAssetId":"...|null","items":[{"assetId":"...","layoutRole":"hero|supporting|backdrop","appearance":"main|background","placement":"center|left|right|top-left|top-right|bottom-left|bottom-right|on-top"}]}',
   ].join('\n');
 }
 

@@ -1,9 +1,20 @@
 import { AppearanceState, Asset, LayoutRole } from '@/types';
 
+export type LayoutPlacement =
+  | 'center'
+  | 'left'
+  | 'right'
+  | 'top-left'
+  | 'top-right'
+  | 'bottom-left'
+  | 'bottom-right'
+  | 'on-top';
+
 export interface AiSuggestedItem {
   assetId: string;
   layoutRole: LayoutRole;
   appearance: AppearanceState;
+  placement?: LayoutPlacement;
 }
 
 export interface AiComposeResult {

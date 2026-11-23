@@ -67,6 +67,18 @@ export const aiCompositionResponseSchema = z.object({
         assetId: z.string().min(1),
         layoutRole: z.enum(['hero', 'supporting', 'backdrop']),
         appearance: z.enum(['main', 'background']),
+	placement: z
+          .enum([
+            'center',
+            'left',
+            'right',
+            'top-left',
+            'top-right',
+            'bottom-left',
+            'bottom-right',
+            'on-top',
+          ])
+          .optional(),
       })
     )
     .min(1)
