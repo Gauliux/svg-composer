@@ -177,6 +177,6 @@ src/
 ## Примеры собранных композиций
 
 Примеры экспортированных векторных иллюстраций находятся в директории [`./examples`](./examples):
-- `examples/composition-1.svg` — ...
-- `examples/composition-2.svg` — ...
-- `examples/composition-3.svg` — ...
+- `examples/composition-1.svg`
+- `examples/composition-2.svg`
+- `examples/composition-3.svg`
