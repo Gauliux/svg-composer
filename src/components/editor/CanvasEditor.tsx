@@ -364,11 +364,16 @@ export const CanvasEditor = React.forwardRef<
   }, [doc.items, doc.detailProfile, assetsMap, activeScheme, selectedInstanceId]);
 
   // 5. Мгновенная перекраска при смене палитры без пересоздания объектов
+  // 5. Мгновенная перекраска при смене палитры и фона холста
   useEffect(() => {
     const canvas = fabricRef.current;
     if (!canvas) return;
+    canvas.backgroundColor =
+      doc.backgroundFill === 'none'
+        ? ''
+        : activeScheme.background[doc.backgroundFill];
     recolorCanvas(canvas, activeScheme);
-  }, [activeScheme]);
+  }, [activeScheme, doc.backgroundFill]);
 
   // 6. Горячие клавиши: Ctrl+D (дублировать) и Delete/Backspace (удалить)
   useEffect(() => {

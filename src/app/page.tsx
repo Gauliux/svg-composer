@@ -48,6 +48,7 @@ function createEmptyDocument(): CompositionDocument {
     items: [],
     createdAt: 0,
     updatedAt: 0,
+    backgroundFill: 'BG_1'
   };
 }
 
@@ -163,13 +164,22 @@ export default function HomePage() {
       const asset = assetsMap.get(assetId);
       if (!asset) return;
 
+      const isBackdropAsset = asset.category === 'background';
+      const objectAssets = assets.filter((a) => a.category !== 'background');
       const maxRef = Math.max(
-        ...assets.map((a) => a.referenceSize),
-        asset.referenceSize,
+        ...objectAssets.map((a) => a.referenceSize),
+        isBackdropAsset ? 1 : asset.referenceSize,
         1
       );
       const minSide = Math.min(doc.artboard.width, doc.artboard.height);
-      const baseScale = Math.round(((minSide * 0.45) / maxRef) * 10000) / 10000;
+
+      const baseScale = isBackdropAsset
+        ? Math.round(
+            (Math.max(doc.artboard.width, doc.artboard.height) /
+              Math.max(asset.referenceSize, 1)) *
+              10000
+          ) / 10000
+        : Math.round(((minSide * 0.45) / maxRef) * 10000) / 10000;
 
       const maxZ = doc.items.reduce((m, i) => Math.max(m, i.zIndex), -1);
       const newId =
@@ -181,20 +191,37 @@ export default function HomePage() {
       const newItem: CanvasItem = {
         instanceId: newId,
         assetId,
-        appearance: 'main',
-        layoutRole: doc.items.length === 0 ? 'hero' : 'supporting',
-        x: doc.artboard.width / 2 + offset,
-        y: doc.artboard.height / 2 + offset,
+        appearance: isBackdropAsset ? 'background' : 'main',
+        layoutRole: isBackdropAsset
+          ? 'backdrop'
+          : doc.items.length === 0
+            ? 'hero'
+            : 'supporting',
+        x: isBackdropAsset
+          ? doc.artboard.width / 2
+          : doc.artboard.width / 2 + offset,
+        y: isBackdropAsset
+          ? doc.artboard.height / 2
+          : doc.artboard.height / 2 + offset,
         scale: baseScale,
         rotation: 0,
-        zIndex: maxZ + 1,
+        zIndex: isBackdropAsset ? 0 : maxZ + 1,
       };
 
-      setDoc((prev) => ({
-        ...prev,
-        items: [...prev.items, newItem],
-        updatedAt: Date.now(),
-      }));
+      setDoc((prev) => {
+        const nextItems = isBackdropAsset
+          ? [
+              newItem,
+              ...prev.items.map((item, idx) => ({ ...item, zIndex: idx + 1 })),
+            ]
+          : [...prev.items, newItem];
+
+        return {
+          ...prev,
+          items: nextItems,
+          updatedAt: Date.now(),
+        };
+      });
       setSelectedInstanceId(newId);
     },
     [assets, assetsMap, doc.artboard.height, doc.artboard.width, doc.items]
@@ -526,6 +553,10 @@ export default function HomePage() {
             onUpdateScheme={handleUpdateScheme}
             onCreateScheme={handleCreateScheme}
             onDeleteScheme={handleDeleteScheme}
+	    backgroundFill={doc.backgroundFill}
+            onChangeBackgroundFill={(backgroundFill) =>
+              setDoc((prev) => ({ ...prev, backgroundFill, updatedAt: Date.now() }))
+            }
           />
 
           <div className="h-px bg-slate-200" />

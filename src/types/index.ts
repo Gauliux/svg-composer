@@ -16,6 +16,7 @@ export type LayoutRole = 'hero' | 'supporting' | 'backdrop';
 
 export interface PathColorBinding {
   pathIndex: number;
+  target: 'fill' | 'stroke';
   token: ColorToken;
   sourceColor: string;
 }
@@ -88,6 +89,8 @@ export interface CompositionDocument {
     width: number;
     height: number;
   };
+  /** Заливка самого Artboard: только фоновые токены или прозрачный (alpha) */
+  backgroundFill: 'none' | BgColorToken;
   detailProfile: DetailProfile;
   paletteId: string;
   items: CanvasItem[];

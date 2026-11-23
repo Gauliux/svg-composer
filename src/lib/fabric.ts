@@ -34,7 +34,8 @@ export interface FabricComposerObject extends Group {
 }
 
 interface TokenizedChild {
-  __colorToken?: ColorToken;
+  __fillToken?: ColorToken;
+  __strokeToken?: ColorToken;
 }
 
 /**
@@ -65,10 +66,17 @@ export function applyColorSchemeToFabricObject(
     return;
   }
 
-  const token = (obj as FabricObject & TokenizedChild).__colorToken;
-  if (token) {
-    const newFill = resolveColorFromScheme(scheme, token, appearance);
-    obj.set({ fill: newFill });
+  const meta = obj as FabricObject & TokenizedChild;
+  if (meta.__fillToken) {
+    obj.set({
+      fill: resolveColorFromScheme(scheme, meta.__fillToken, appearance),
+    });
+    obj.dirty = true;
+  }
+  if (meta.__strokeToken) {
+    obj.set({
+      stroke: resolveColorFromScheme(scheme, meta.__strokeToken, appearance),
+    });
     obj.dirty = true;
   }
 }
@@ -83,11 +91,18 @@ export async function createFabricGroupFromItem(
   scheme: ColorScheme
 ): Promise<FabricComposerObject> {
   const variant = asset.variants[detailProfile][item.appearance];
-  const bindingsMap = new Map<number, ColorToken>();
+  const fillBindings = new Map<number, ColorToken>();
+  const strokeBindings = new Map<number, ColorToken>();
+
   for (const b of variant.colorBindings) {
-    bindingsMap.set(b.pathIndex, b.token);
+    if (b.target === 'stroke') {
+      strokeBindings.set(b.pathIndex, b.token);
+    } else {
+      fillBindings.set(b.pathIndex, b.token);
+    }
   }
 
+  const rootHasFillNone = /<svg[^>]*\bfill=["']none["']/i.test(variant.svg);
   let shapeCounter = 0;
 
   const { objects, options } = await loadSVGFromString(
@@ -95,10 +110,18 @@ export async function createFabricGroupFromItem(
     (svgElement, fabricObj) => {
       const tag = svgElement.tagName.toLowerCase();
       if (SHAPE_TAGS.has(tag)) {
-        const token = bindingsMap.get(shapeCounter);
-        if (token) {
-          (fabricObj as FabricObject & TokenizedChild).__colorToken = token;
+        const meta = fabricObj as FabricObject & TokenizedChild;
+        const fToken = fillBindings.get(shapeCounter);
+        const sToken = strokeBindings.get(shapeCounter);
+        if (fToken) meta.__fillToken = fToken;
+        if (sToken) meta.__strokeToken = sToken;
+
+        // Если корневой <svg fill="none">, а у path/line задан только stroke — убираем чёрную заливку
+        const rawFill = svgElement.getAttribute('fill');
+        if (rawFill === 'none' || (!rawFill && rootHasFillNone)) {
+          fabricObj.set({ fill: '' });
         }
+
         shapeCounter += 1;
       }
     }

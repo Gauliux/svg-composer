@@ -181,6 +181,28 @@
           "background": "A10/L/background.svg"
         }
       }
-    }
+    },
+	{
+	  "id": "B01",
+	  "title": "Фон с изометрическими деталями 1",
+	  "description": "Декоративный фон со скруглёнными деталями и штрихами по углам",
+	  "tags": ["фон", "подложка", "декор", "линии", "изометрия"],
+	  "category": "background",
+	  "variants": {
+		"S": { "main": "B01/S/background.svg", "background": "B01/S/background.svg" },
+		"L": { "main": "B01/L/background.svg", "background": "B01/L/background.svg" }
+	  }
+	},
+	{
+	  "id": "B02",
+	  "title": "Фон с изометрическими деталями 2",
+	  "description": "Декоративный фон с выделением левой стороны, словно границы пространства",
+	  "tags": ["фон", "стол", "декор", "угол", "изометрия"],
+	  "category": "background",
+	  "variants": {
+		"S": { "main": "B02/S/background.svg", "background": "B02/S/background.svg" },
+		"L": { "main": "B02/L/background.svg", "background": "B02/L/background.svg" }
+	  }
+	}
   ]
 }

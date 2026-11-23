@@ -107,6 +107,10 @@ const ALLOWED_ATTRS = new Set([
   'fill-rule',
   'clip-rule',
   'data-token',
+  'stroke',
+  'stroke-width',
+  'stroke-linecap',
+  'stroke-linejoin',
 ]);
 
 export interface ParsedSvgResult {
@@ -216,39 +220,57 @@ export function parseAndValidateSvg(
   shapeElements.forEach((el, index) => {
     const explicitToken = el.getAttribute('data-token') as ColorToken | null;
     const rawFill = el.getAttribute('fill');
-    const normalized = normalizeColor(rawFill);
+    const rawStroke = el.getAttribute('stroke');
 
-    if (explicitToken && (ALL_COLOR_TOKENS as readonly string[]).includes(explicitToken)) {
-      if (!isTokenAllowedForAppearance(explicitToken, appearance)) {
-        disallowedTokensSet.add(explicitToken);
+    const processAttr = (
+      target: 'fill' | 'stroke',
+      rawValue: string | null
+    ) => {
+      const normalized = normalizeColor(rawValue);
+      if (normalized === 'none') return;
+
+      if (
+        target === 'fill' &&
+        explicitToken &&
+        (ALL_COLOR_TOKENS as readonly string[]).includes(explicitToken)
+      ) {
+        if (!isTokenAllowedForAppearance(explicitToken, appearance)) {
+          disallowedTokensSet.add(explicitToken);
+        }
+        colorBindings.push({
+          pathIndex: index,
+          target,
+          token: explicitToken,
+          sourceColor: normalized,
+        });
+        return;
       }
+
+      const mappedToken = colorMapping[normalized];
+      if (!mappedToken) {
+        unknownColorsSet.add(normalized);
+        return;
+      }
+
+      // Белый (#FFFFFF) в фоновых SVG допускается как неизменяемый блик без привязки к OBJ_4
+      if (appearance === 'background' && normalized === '#FFFFFF') {
+        return;
+      }
+
+      if (!isTokenAllowedForAppearance(mappedToken, appearance)) {
+        disallowedTokensSet.add(mappedToken);
+      }
+
       colorBindings.push({
         pathIndex: index,
-        token: explicitToken,
+        target,
+        token: mappedToken,
         sourceColor: normalized,
       });
-      return;
-    }
+    };
 
-    if (normalized === 'none') {
-      return;
-    }
-
-    const mappedToken = colorMapping[normalized];
-    if (!mappedToken) {
-      unknownColorsSet.add(normalized);
-      return;
-    }
-
-    if (!isTokenAllowedForAppearance(mappedToken, appearance)) {
-      disallowedTokensSet.add(mappedToken);
-    }
-
-    colorBindings.push({
-      pathIndex: index,
-      token: mappedToken,
-      sourceColor: normalized,
-    });
+    processAttr('fill', rawFill);
+    processAttr('stroke', rawStroke);
   });
 
   return {

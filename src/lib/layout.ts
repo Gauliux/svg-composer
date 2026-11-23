@@ -176,29 +176,49 @@ export function buildDeterministicLayout(
   const usableH = artH - margin * 2;
 
   // Нормализуем роли, если элементы пришли из прямого выбора (Сценарий 2) без ролей
-  const hasExplicitHero = validItems.some((i) => i.layoutRole === 'hero');
-  const normalized = validItems.map((item, idx) => {
-    const appearance: AppearanceState = item.appearance ?? 'main';
-    let layoutRole: LayoutRole = item.layoutRole ?? 'supporting';
-    if (!hasExplicitHero && idx === 0) {
+  const hasExplicitHero = validItems.some(
+    (i) => i.layoutRole === 'hero' && assetsMap.get(i.assetId)?.category !== 'background'
+  );
+  let assignedHero = false;
+
+  const normalized = validItems.map((item) => {
+    const asset = assetsMap.get(item.assetId)!;
+    const isCanvasBackdrop = asset.category === 'background';
+
+    const appearance: AppearanceState = isCanvasBackdrop
+      ? 'background'
+      : (item.appearance ?? 'main');
+
+    let layoutRole: LayoutRole = isCanvasBackdrop
+      ? 'backdrop'
+      : (item.layoutRole ?? 'supporting');
+
+    if (!isCanvasBackdrop && !hasExplicitHero && !assignedHero) {
       layoutRole = 'hero';
+      assignedHero = true;
     }
+
     return {
       assetId: item.assetId,
       appearance,
       layoutRole,
-      asset: assetsMap.get(item.assetId)!,
+      isCanvasBackdrop,
+      asset,
     };
   });
 
-  // Вычисляем единый sceneScale для всей композиции, чтобы сохранить пропорции объектов друг к другу
-  const maxRef = Math.max(...normalized.map((n) => n.asset.referenceSize), 1);
-  const targetHeroFraction = normalized.length === 1 ? 0.62 : 0.46;
+  // Вычисляем единый sceneScale только по предметным объектам (игнорируя полноразмерные фоны)
+  const foregroundAndProps = normalized.filter((n) => !n.isCanvasBackdrop);
+  const maxRef = Math.max(
+    ...foregroundAndProps.map((n) => n.asset.referenceSize),
+    1
+  );
+  const targetHeroFraction = foregroundAndProps.length <= 1 ? 0.62 : 0.46;
   let sceneScale =
     (Math.min(usableW, usableH) * targetHeroFraction) / maxRef;
 
-  // Проверяем, чтобы ни один объект при этом scale не превысил 72% полезной области холста
-  for (const entry of normalized) {
+  // Проверяем, чтобы ни один предметный объект не превысил 72% полезной области холста
+  for (const entry of foregroundAndProps) {
     const sizeAtOne = getVisualSize(
       entry.asset,
       options.detailProfile,
@@ -214,15 +234,41 @@ export function buildDeterministicLayout(
 
   sceneScale = Math.max(0.1, Math.round(sceneScale * 10000) / 10000);
 
-  // Разделяем по композиционным слоям: backdrop (внизу) -> supporting -> hero (в фокусе)
-  const backdropEntries = normalized.filter((i) => i.layoutRole === 'backdrop');
-  const supportingEntries = normalized.filter(
-    (i) => i.layoutRole === 'supporting'
+  // Разделяем по композиционным слоям: canvasBackdrop (0) -> backdrop -> supporting -> hero
+  const canvasBackdropEntries = normalized.filter((i) => i.isCanvasBackdrop);
+  const backdropEntries = normalized.filter(
+    (i) => !i.isCanvasBackdrop && i.layoutRole === 'backdrop'
   );
-  const heroEntries = normalized.filter((i) => i.layoutRole === 'hero');
+  const supportingEntries = normalized.filter(
+    (i) => !i.isCanvasBackdrop && i.layoutRole === 'supporting'
+  );
+  const heroEntries = normalized.filter(
+    (i) => !i.isCanvasBackdrop && i.layoutRole === 'hero'
+  );
 
   const placedForegroundRects: PlacedRect[] = [];
   const results: Array<CanvasItem & { _sortWeight: number }> = [];
+
+  // 0. Размещаем полноразмерные декоративные фоны (B01 и т.п.) в центр под всей сценой
+  canvasBackdropEntries.forEach((entry, idx) => {
+    const coverScale =
+      Math.round(
+        (Math.max(artW, artH) / Math.max(entry.asset.referenceSize, 1)) * 10000
+      ) / 10000;
+
+    results.push({
+      instanceId: generateInstanceId(results.length, entry.assetId),
+      assetId: entry.assetId,
+      appearance: 'background',
+      layoutRole: 'backdrop',
+      x: Math.round((artW / 2) * 100) / 100,
+      y: Math.round((artH / 2) * 100) / 100,
+      scale: coverScale,
+      rotation: 0,
+      zIndex: 0,
+      _sortWeight: idx,
+    });
+  });
 
   // 1. Размещаем Hero
   heroEntries.forEach((entry, idx) => {
@@ -345,7 +391,7 @@ export function buildDeterministicLayout(
     });
   });
 
-  // 3. Размещаем Backdrop (на нижние слои композиции)
+  // 3. Размещаем Backdrop (обычные объекты на заднем плане)
   const bgAnchors = BACKDROP_ANCHORS[orientation];
   backdropEntries.forEach((entry, idx) => {
     const anchor = bgAnchors[idx % bgAnchors.length];
@@ -379,7 +425,7 @@ export function buildDeterministicLayout(
     });
   });
 
-  // Назначаем итоговый детерминированный zIndex (снизу вверх: backdrop -> supporting -> hero)
+  // Назначаем итоговый детерминированный zIndex (снизу вверх: canvasBackdrop -> backdrop -> supporting -> hero)
   results.sort((a, b) => a._sortWeight - b._sortWeight);
   return results.map(({ _sortWeight: _, ...item }, index) => ({
     ...item,

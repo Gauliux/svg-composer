@@ -7,6 +7,7 @@ import {
   AssetVariant,
   ColorScheme,
   DetailProfile,
+  ColorToken,
 } from '@/types';
 import { resolveColorFromScheme } from '@/lib/colors';
 import { extractCategories, searchAssets } from '@/lib/search';
@@ -36,12 +37,26 @@ function buildPreviewDataUrl(
       variant.colorBindings.map((b) => [b.pathIndex, b.token])
     );
 
+    const fillMap = new Map<number, ColorToken>();
+    const strokeMap = new Map<number, ColorToken>();
+    for (const b of variant.colorBindings) {
+      if (b.target === 'stroke') strokeMap.set(b.pathIndex, b.token);
+      else fillMap.set(b.pathIndex, b.token);
+    }
+
     shapes.forEach((el, idx) => {
-      const token = bindingsMap.get(idx);
-      if (token) {
+      const fToken = fillMap.get(idx);
+      if (fToken) {
         el.setAttribute(
           'fill',
-          resolveColorFromScheme(scheme, token, variant.appearance)
+          resolveColorFromScheme(scheme, fToken, variant.appearance)
+        );
+      }
+      const sToken = strokeMap.get(idx);
+      if (sToken) {
+        el.setAttribute(
+          'stroke',
+          resolveColorFromScheme(scheme, sToken, variant.appearance)
         );
       }
     });

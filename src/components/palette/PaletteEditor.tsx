@@ -18,6 +18,8 @@ interface PaletteEditorProps {
   onUpdateScheme: (scheme: ColorScheme) => void;
   onCreateScheme: (scheme: ColorScheme) => void;
   onDeleteScheme: (id: string) => void;
+  backgroundFill: 'none' | BgColorToken;
+  onChangeBackgroundFill: (fill: 'none' | BgColorToken) => void;
 }
 
 export function PaletteEditor({
@@ -27,6 +29,8 @@ export function PaletteEditor({
   onUpdateScheme,
   onCreateScheme,
   onDeleteScheme,
+  backgroundFill,
+  onChangeBackgroundFill,
 }: PaletteEditorProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
@@ -233,6 +237,45 @@ export function PaletteEditor({
                 {token}
               </span>
             </label>
+          ))}
+        </div>
+      </div>
+
+      {/* Фон холста (Artboard) — только BG_1..BG_4 или прозрачный */}
+      <div>
+        <span className="mb-1 block text-[11px] font-medium text-slate-500">
+          Фон холста (Artboard)
+        </span>
+        <div className="grid grid-cols-5 gap-1">
+          <button
+            type="button"
+            onClick={() => onChangeBackgroundFill('none')}
+            className={`flex h-8 items-center justify-center rounded-lg border text-[10px] font-medium transition ${
+              backgroundFill === 'none'
+                ? 'border-indigo-600 ring-1 ring-indigo-500 text-indigo-700 bg-indigo-50'
+                : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+            }`}
+            title="Прозрачный фон (Alpha)"
+          >
+            Alpha
+          </button>
+          {BG_TOKENS.map((token) => (
+            <button
+              key={token}
+              type="button"
+              onClick={() => onChangeBackgroundFill(token)}
+              className={`flex h-8 flex-col items-center justify-center rounded-lg border transition ${
+                backgroundFill === token
+                  ? 'border-indigo-600 ring-2 ring-indigo-400'
+                  : 'border-slate-200 hover:border-slate-300'
+              }`}
+              style={{ backgroundColor: activeScheme.background[token] }}
+              title={`Залить холст ${token}`}
+            >
+              <span className="rounded bg-white/80 px-1 text-[9px] font-semibold text-slate-800">
+                {token}
+              </span>
+            </button>
           ))}
         </div>
       </div>
