@@ -1,4 +1,9 @@
-import { AppearanceState, Asset, LayoutRole } from '@/types';
+import {
+  AiClientConfig,
+  AppearanceState,
+  Asset,
+  LayoutRole,
+} from '@/types';
 
 export type LayoutPlacement =
   | 'center'
@@ -25,12 +30,23 @@ export interface AiComposeResult {
 
 export async function generateCompositionByMetaphor(
   prompt: string,
-  assets: Asset[]
+  assets: Asset[],
+  aiConfig?: AiClientConfig
 ): Promise<AiComposeResult> {
   const objectAssets = assets.filter((a) => a.category !== 'background');
   const backdrops = assets
     .filter((a) => a.category === 'background')
     .map((a) => ({ id: a.id, title: a.title }));
+
+  const configPayload = aiConfig?.useCustomConfig
+    ? {
+        provider: aiConfig.provider,
+        baseUrl: aiConfig.baseUrl,
+        model: aiConfig.model,
+        apiKey: aiConfig.apiKey,
+        temperature: aiConfig.temperature,
+      }
+    : undefined;
 
   const res = await fetch('/api/compose', {
     method: 'POST',
@@ -45,6 +61,7 @@ export async function generateCompositionByMetaphor(
         category: a.category,
       })),
       backdrops,
+      config: configPayload,
     }),
   });
 

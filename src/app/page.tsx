@@ -110,16 +110,6 @@ export default function HomePage() {
 
       if (storedAssets && storedAssets.length > 0) {
         setAssets(storedAssets);
-      } else {
-        try {
-          const demo = await loadDemoLibrary();
-          if (active && demo.assets.length > 0) {
-            setAssets(demo.assets);
-            await saveAssetsToStorage(demo.assets);
-          }
-        } catch (err) {
-          console.error('Ошибка загрузки демо-библиотеки:', err);
-        }
       }
 
       if (storedComps.length > 0) {
@@ -496,6 +486,8 @@ export default function HomePage() {
                 activeScheme={activeScheme}
                 onAddSingle={handleAddSingleAsset}
                 onBuildFromSelection={handleBuildFromSelection}
+                onLoadDemo={() => applyLoadedLibrary(loadDemoLibrary)}
+                onSwitchToImport={() => setLeftTab('import')}
               />
             ) : (
               <AssetImporter

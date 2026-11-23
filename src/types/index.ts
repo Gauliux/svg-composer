@@ -14,6 +14,17 @@ export type ColorToken = (typeof ALL_COLOR_TOKENS)[number];
 
 export type LayoutRole = 'hero' | 'supporting' | 'backdrop';
 
+export type AiProviderType = 'ollama' | 'openai';
+
+export interface AiClientConfig {
+  useCustomConfig: boolean;
+  provider: AiProviderType;
+  baseUrl: string;
+  model: string;
+  apiKey: string;
+  temperature: number;
+}
+
 export interface PathColorBinding {
   pathIndex: number;
   target: 'fill' | 'stroke';

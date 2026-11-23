@@ -1,36 +1,182 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# SVG Composer
 
-## Getting Started
+Веб-сервис (SPA) для интерактивной сборки векторных иллюстраций из библиотек готовых SVG-компонентов.
 
-First, run the development server:
+## Основные возможности
+
+- **Два сценария автоматической сборки:**
+  1. **По метафоре или заголовку (AI):** LLM подбирает релевантные компоненты из библиотеки, назначает композиционные роли (`hero`, `supporting`, `backdrop`), цветовые состояния (`main`, `background`) и пространственные подсказки, после чего детерминированный `Layout Engine` выстраивает изометрическую композицию.
+  2. **По прямому выбору компонентов:** клиентский нечёткий поиск (`Fuse.js`) по названию, описанию, тегам и категориям с автосборкой выбранных элементов на холсте.
+- **Интерактивный векторный редактор (Fabric.js v7):** перемещение, вращение (с шагом `15°` при удержании `Shift`), пропорциональное масштабирование, дублирование (`Ctrl+D`), удаление (`Delete`), управление порядком слоёв.
+- **Управление детализацией (`S` / `L`) и состояниями (`Main` / `Background`):** подмена авторских SVG-вариантов с сохранением позиции, логического масштаба и взаимных пропорций объектов относительно друг друга.
+- **Семантическая система цветовых схем (8 токенов):**
+  - 3 предустановленные палитры + создание, редактирование и JSON импорт/экспорт пользовательских схем.
+  - Строгое разделение фоновых (`BG_1..BG_4`) и объектных (`OBJ_1..OBJ_4`) токенов.
+- **Адаптивные фоны Artboard:** выбор прозрачного фона (`Alpha`) или заливки из `BG_1..BG_4`, а также подключение декоративных фоновых SVG с автоматической привязкой деталей к углам холста любого формата (`1:1`, `16:9`, `9:16`, Custom).
+- **Полностью клиентское хранение (Client-Side First):** библиотеки, палитры и проекты сохраняются локально в `IndexedDB`.
+- **Чистый векторный экспорт:** скачивание результата в формате `.svg` без растеризации с сохранением слоёв и редактируемости в Figma.
+
+---
+
+## Быстрый старт
+
+### 1. Установка зависимостей
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 2. Настройка AI-провайдера
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Скопируйте шаблон переменных окружения:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+cp .env.example .env.local
+```
 
-## Learn More
+#### Вариант A: Локальная Ollama (по умолчанию)
+1. Установите [Ollama](https://ollama.com/) и загрузите компактную модель (4–8B):
+   ```bash
+   ollama pull qwen2.5:7b
+   ```
+2. Убедитесь, что в `.env.local` указано:
+   ```env
+   AI_PROVIDER=ollama
+   OLLAMA_BASE_URL=http://127.0.0.1:11434
+   OLLAMA_MODEL=<model>
+   ```
 
-To learn more about Next.js, take a look at the following resources:
+#### Вариант B: OpenAI-совместимый API (OpenAI / Groq / OpenRouter / Google AI Studio)
+Можно задать настройки в `.env.local`:
+```env
+AI_PROVIDER=openai
+AI_BASE_URL=https://api.openai.com/v1
+AI_MODEL=gpt-4o-mini
+AI_API_KEY=ваш_ключ
+```
+Либо указать ключ и endpoint **прямо в интерфейсе приложения** (кнопка шестерёнки в блоке «Сборка по метафоре») — в этом случае ключ хранится только в `localStorage` браузера.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### 3. Запуск
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+# Режим разработки
+npm run dev
 
-## Deploy on Vercel
+# Или production-сборка
+npm run build
+npm run start
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Откройте [http://localhost:3000](http://localhost:3000) в браузере. При первом запуске нажмите **«Загрузить демо-библиотеку»** (либо импортируйте собственный ZIP/папку во вкладке «Импорт / Демо»).
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+---
+
+## Архитектура проекта
+
+### Хранение, извлечение и переиспользование SVG-элементов
+
+1. **Хранение (`src/lib/storage.ts`):**
+   Пользовательские библиотеки SVG, кастомные палитры и сохранённые композиции (`CompositionDocument`) хранятся исключительно в браузере в **IndexedDB** (`idb-keyval`). Сервер не хранит пользовательские файлы. Документ композиции оперирует ссылками (`assetId`) и параметрами размещения экземпляров (`x`, `y`, `scale`, `rotation`, `zIndex`, `appearance`), не дублируя исходную XML-разметку.
+
+2. **Извлечение и валидация (`src/lib/assets.ts`, `src/lib/validation.ts`):**
+   - Поддерживается загрузка встроенной демо-библиотеки (`/public/demo-assets`), импорт из `.zip` (`JSZip`) и локальных папок (`webkitdirectory`).
+   - Каждый SVG проверяется через `DOMParser` по строгому allowlist разрешённых тегов и атрибутов (отклоняются скрипты, обработчики событий и внешние ссылки).
+   - Извлекаются `width`, `height`, `viewBox` и привязки цветов (`colorBindings`) для атрибутов `fill` и `stroke`.
+   - Вычисляется единый `referenceSize` по `L`-варианту компонента, что гарантирует сохранение исходных пропорций объектов друг относительно друга при смене детализации `S ↔ L`.
+
+3. **Переиспользование и композиция (`src/lib/fabric.ts`, `src/lib/backdrop.ts`, `src/lib/layout.ts`):**
+   - Компоненты загружаются в **Fabric.js v7** как неделимые группы с привязкой семантических токенов цвета к каждому внутреннему примитиву через `reviver`. Боковые маркеры масштабирования отключены во избежание искажения пропорций.
+   - Смена цветовой схемы перекрашивает сцену мгновенно по токенам без повторного парсинга SVG, строго соблюдая ограничение: `background`-объекты и фон Artboard используют только `BG_1..BG_4`, а `main`-объекты — `BG_1..BG_4` и `OBJ_1..OBJ_4`.
+   - Декоративные фоны Artboard (`src/lib/backdrop.ts`) автоматически раскладывают угловые элементы по квадрантам (`TL`, `TR`, `BL`, `BR`) и перепривязывают их к углам при любом соотношении сторон холста.
+   - `Layout Engine` (`src/lib/layout.ts`) — детерминированный алгоритм на TypeScript, размещающий выбранные объекты с единым каноническим масштабом в плотную изометрическую группу с учётом габаритов, избегая коллизий и поддерживая выборочное наложение (`on-top`) для семантически совместимых пар.
+
+4. **AI-контур (`src/app/api/compose/route.ts`, `src/lib/ollama.ts`):**
+   В LLM отправляется только компактный каталог текстовых метаданных (`id`, `title`, `tags`, `category`) и названия фонов. Исходный SVG-код, координаты и цвета в модель не передаются. Ответ модели валидируется по строгой Zod-схеме с программной очисткой от дубликатов и несуществующих ID.
+
+---
+
+## Структура библиотеки и `manifest.json`
+
+Библиотека описывается файлом `manifest.json` в корне пакета и папками с 4 вариантами на каждый компонент (`S/main`, `S/background`, `L/main`, `L/background`):
+
+```text
+assets/
+├── manifest.json
+├── A01/
+│   ├── S/
+│   │   ├── main.svg
+│   │   └── background.svg
+│   └── L/
+│       ├── main.svg
+│       └── background.svg
+└── B01/               # Опциональный декоративный фон (category: "background")
+    ├── S/background.svg
+    └── L/background.svg
+```
+
+Пример описания компонента в `manifest.json`:
+```json
+{
+  "profiles": ["S", "L"],
+  "appearances": ["main", "background"],
+  "colorMapping": {
+    "#D7CDF5": "BG_1",
+    "#AA9BF0": "BG_2",
+    "#7864D7": "BG_3",
+    "#181817": "BG_4",
+    "#F9ECB0": "OBJ_1",
+    "#F9A3AA": "OBJ_2",
+    "#FFE3E1": "OBJ_3",
+    "#FFFFFF": "OBJ_4"
+  },
+  "assets": [
+    {
+      "id": "A01",
+      "title": "Открытая книга",
+      "description": "Открытая книга для тем обучения и базы знаний",
+      "tags": ["книга", "знания", "обучение"],
+      "category": "education",
+      "variants": {
+        "S": { "main": "A01/S/main.svg", "background": "A01/S/background.svg" },
+        "L": { "main": "A01/L/main.svg", "background": "A01/L/background.svg" }
+      }
+    }
+  ]
+}
+```
+
+---
+
+## Структура проекта
+
+```text
+src/
+├── app/
+│   ├── api/compose/route.ts   # Единый API Route (Ollama / OpenAI-compatible)
+│   └── page.tsx               # Главный SPA-экран редактора
+├── components/
+│   ├── composition/           # AI-генерация по метафоре и настройки модели
+│   ├── editor/                # CanvasEditor (Fabric v7), Toolbar, LayersPanel
+│   ├── library/               # Поиск Fuse.js, превью, импортер ZIP/папки
+│   └── palette/               # Управление 8-слотовыми палитрами и фоном Artboard
+├── lib/
+│   ├── assets.ts              # Парсинг пользовательских библиотек
+│   ├── backdrop.ts            # Адаптивное позиционирование декоративных фонов
+│   ├── colors.ts              # Палитры, нормализация и маппинг токенов
+│   ├── fabric.ts              # Обёртка Fabric.js v7 и экспорт SVG
+│   ├── layout.ts              # Детерминированный изометрический Layout Engine
+│   ├── ollama.ts              # Клиент вызова /api/compose
+│   ├── search.ts              # Индекс и поиск Fuse.js
+│   ├── storage.ts             # Работа с IndexedDB
+│   └── validation.ts          # Zod-схемы и allowlist-проверка SVG
+└── types/index.ts             # TypeScript-контракты
+```
+
+---
+
+## Примеры собранных композиций
+
+Примеры экспортированных векторных иллюстраций находятся в директории [`./examples`](./examples):
+- `examples/composition-1.svg` — ...
+- `examples/composition-2.svg` — ...
+- `examples/composition-3.svg` — ...

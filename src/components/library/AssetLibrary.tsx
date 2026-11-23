@@ -18,6 +18,8 @@ interface AssetLibraryProps {
   activeScheme: ColorScheme;
   onAddSingle: (assetId: string) => void;
   onBuildFromSelection: (assetIds: string[]) => void;
+  onLoadDemo?: () => Promise<unknown>;
+  onSwitchToImport?: () => void;
 }
 
 /**
@@ -74,6 +76,8 @@ export function AssetLibrary({
   activeScheme,
   onAddSingle,
   onBuildFromSelection,
+  onLoadDemo,
+  onSwitchToImport,
 }: AssetLibraryProps) {
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('all');
@@ -99,6 +103,48 @@ export function AssetLibrary({
       prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
     );
   };
+
+  const [demoLoading, setDemoLoading] = useState(false);
+
+  if (objectAssets.length === 0) {
+    return (
+      <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-slate-300 bg-slate-50/80 p-5 text-center">
+        <div className="text-xs font-semibold text-slate-700">
+          Библиотека компонентов пуста
+        </div>
+        <p className="text-[11px] leading-relaxed text-slate-500">
+          Загрузите собственную библиотеку (ZIP / папка) или используйте готовую
+          демо-библиотеку из 10 объектов и 2 фонов.
+        </p>
+        {onLoadDemo && (
+          <button
+            type="button"
+            disabled={demoLoading}
+            onClick={async () => {
+              setDemoLoading(true);
+              try {
+                await onLoadDemo();
+              } finally {
+                setDemoLoading(false);
+              }
+            }}
+            className="w-full rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
+          >
+            {demoLoading ? 'Загрузка...' : 'Загрузить демо-библиотеку'}
+          </button>
+        )}
+        {onSwitchToImport && (
+          <button
+            type="button"
+            onClick={onSwitchToImport}
+            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+          >
+            Импортировать свою библиотеку
+          </button>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-3">

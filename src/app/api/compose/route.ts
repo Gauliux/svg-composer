@@ -24,6 +24,15 @@ const requestBodySchema = z.object({
     )
     .optional()
     .default([]),
+  config: z
+    .object({
+      provider: z.enum(['ollama', 'openai']),
+      baseUrl: z.string().trim().optional(),
+      model: z.string().trim().optional(),
+      apiKey: z.string().trim().optional(),
+      temperature: z.number().min(0).max(1.5).optional(),
+    })
+    .optional(),
 });
 
 function buildCompactSystemPrompt(): string {
@@ -41,6 +50,103 @@ function buildCompactSystemPrompt(): string {
     '4. Avoid duplicate assetId entries.',
     '5. Return valid JSON strictly matching: {"backdropAssetId":"...|null","items":[{"assetId":"...","layoutRole":"hero|supporting|backdrop","appearance":"main|background","placement":"center|top-left|top-right|bottom-left|bottom-right|left|right|on-top"}]}',
   ].join('\n');
+}
+
+async function callOllama(
+  baseUrl: string,
+  model: string,
+  temperature: number,
+  systemPrompt: string,
+  userMessage: string
+): Promise<string> {
+  const cleanUrl = baseUrl.replace(/\/+$/, '');
+  const res = await fetch(`${cleanUrl}/api/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model,
+      stream: false,
+      format: 'json',
+      options: {
+        temperature,
+        num_predict: 400,
+      },
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userMessage },
+      ],
+    }),
+    signal: AbortSignal.timeout(30_000),
+  });
+
+  if (!res.ok) {
+    const details = await res.text().catch(() => '');
+    throw new Error(
+      `Ollama вернула ошибку ${res.status} (модель "${model}"). ${details.slice(0, 150)}`
+    );
+  }
+
+  const data = (await res.json()) as { message?: { content?: string } };
+  const content = data?.message?.content?.trim();
+  if (!content) throw new Error('Ollama вернула пустой ответ');
+  return content;
+}
+
+async function callOpenAiCompatible(
+  baseUrl: string,
+  apiKey: string,
+  model: string,
+  temperature: number,
+  systemPrompt: string,
+  userMessage: string
+): Promise<string> {
+  const cleanBase = baseUrl.replace(/\/+$/, '');
+  const endpoint = cleanBase.endsWith('/chat/completions')
+    ? cleanBase
+    : `${cleanBase}/chat/completions`;
+
+  const makeRequest = (useJsonMode: boolean) =>
+    fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        temperature,
+        max_tokens: 450,
+        ...(useJsonMode ? { response_format: { type: 'json_object' } } : {}),
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userMessage },
+        ],
+      }),
+      signal: AbortSignal.timeout(30_000),
+    });
+
+  let res = await makeRequest(true);
+  // Некоторые OpenAI-совместимые модели не поддерживают response_format: json_object
+  if (res.status === 400) {
+    const errText = await res.clone().text().catch(() => '');
+    if (/response_format|json_object/i.test(errText)) {
+      res = await makeRequest(false);
+    }
+  }
+
+  if (!res.ok) {
+    const details = await res.text().catch(() => '');
+    throw new Error(
+      `API вернуло ошибку ${res.status} (${model}). ${details.slice(0, 180)}`
+    );
+  }
+
+  const data = (await res.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  const content = data?.choices?.[0]?.message?.content?.trim();
+  if (!content) throw new Error('API вернуло пустой ответ');
+  return content;
 }
 
 export async function POST(req: NextRequest) {
@@ -62,11 +168,40 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { prompt, assets, backdrops } = parsedRequest.data;
-  const ollamaUrl = (
-    process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434'
-  ).replace(/\/+$/, '');
-  const ollamaModel = process.env.OLLAMA_MODEL || 'qwen2.5:7b';
+  const { prompt, assets, backdrops, config } = parsedRequest.data;
+
+  const envProvider =
+    process.env.AI_PROVIDER === 'openai' ? 'openai' : 'ollama';
+  const provider = config?.provider ?? envProvider;
+  const temperature = config?.temperature ?? 0.2;
+
+  const model =
+    config?.model ||
+    (provider === 'openai'
+      ? process.env.AI_MODEL || 'gpt-4o-mini'
+      : process.env.OLLAMA_MODEL || 'qwen2.5:7b');
+
+  const baseUrl =
+    config?.baseUrl ||
+    (provider === 'openai'
+      ? process.env.AI_BASE_URL || 'https://api.openai.com/v1'
+      : process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434');
+
+  const apiKey =
+    config?.apiKey ||
+    process.env.AI_API_KEY ||
+    process.env.OPENAI_API_KEY ||
+    '';
+
+  if (provider === 'openai' && !apiKey) {
+    return NextResponse.json(
+      {
+        error:
+          'Не указан API-ключ. Введите его в настройках AI (шестерёнка) или задайте AI_API_KEY в .env.local.',
+      },
+      { status: 401 }
+    );
+  }
 
   const compactCatalog = assets.map((a) => ({
     id: a.id,
@@ -78,56 +213,29 @@ export async function POST(req: NextRequest) {
   const backdropPart =
     backdrops.length > 0 ? `\nBackdrops:\n${JSON.stringify(backdrops)}` : '';
   const userMessage = `Catalog:\n${JSON.stringify(compactCatalog)}${backdropPart}\n\nUser metaphor/title: "${prompt}"`;
+  const systemPrompt = buildCompactSystemPrompt();
 
-  let ollamaRes: Response;
+  let rawContent: string;
   try {
-    ollamaRes = await fetch(`${ollamaUrl}/api/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: ollamaModel,
-        stream: false,
-        format: 'json',
-        options: {
-          temperature: 0.2,
-          num_predict: 380,
-        },
-        messages: [
-          { role: 'system', content: buildCompactSystemPrompt() },
-          { role: 'user', content: userMessage },
-        ],
-      }),
-      signal: AbortSignal.timeout(30_000),
-    });
+    rawContent =
+      provider === 'openai'
+        ? await callOpenAiCompatible(
+            baseUrl,
+            apiKey,
+            model,
+            temperature,
+            systemPrompt,
+            userMessage
+          )
+        : await callOllama(baseUrl, model, temperature, systemPrompt, userMessage);
   } catch (err) {
-    const message =
-      err instanceof Error && err.name === 'TimeoutError'
-        ? 'Превышено время ожидания ответа от Ollama (30 сек)'
-        : `Не удалось подключиться к локальной Ollama (${ollamaUrl}). Убедитесь, что сервис Ollama запущен.`;
+    const isTimeout = err instanceof Error && err.name === 'TimeoutError';
+    const message = isTimeout
+      ? 'Превышено время ожидания ответа от LLM (30 сек)'
+      : err instanceof Error
+        ? err.message
+        : `Не удалось подключиться к ${provider} (${baseUrl})`;
     return NextResponse.json({ error: message }, { status: 503 });
-  }
-
-  if (!ollamaRes.ok) {
-    const details = await ollamaRes.text().catch(() => '');
-    return NextResponse.json(
-      {
-        error: `Ollama вернула ошибку ${ollamaRes.status}. Проверьте, загружена ли модель "${ollamaModel}".`,
-        details,
-      },
-      { status: 502 }
-    );
-  }
-
-  const ollamaJson = (await ollamaRes.json()) as {
-    message?: { content?: string };
-  };
-  const rawContent = ollamaJson?.message?.content?.trim();
-
-  if (!rawContent) {
-    return NextResponse.json(
-      { error: 'Ollama вернула пустой ответ' },
-      { status: 502 }
-    );
   }
 
   const jsonText = rawContent
@@ -165,10 +273,7 @@ export async function POST(req: NextRequest) {
 
   if (cleanItems.length === 0) {
     return NextResponse.json(
-      {
-        error:
-          'AI не смогла подобрать подходящие компоненты из текущей библиотеки',
-      },
+      { error: 'AI не смогла подобрать подходящие компоненты из текущей библиотеки' },
       { status: 422 }
     );
   }
@@ -183,7 +288,7 @@ export async function POST(req: NextRequest) {
     rawBackdropId && validBackdropIds.has(rawBackdropId) ? rawBackdropId : null;
 
   return NextResponse.json({
-    model: ollamaModel,
+    model: `${provider}:${model}`,
     backdropAssetId: cleanBackdropId,
     items: cleanItems,
   });
