@@ -33,13 +33,13 @@ function buildCompactSystemPrompt(): string {
     'Assign each item:',
     '- layoutRole: "hero" (1 main focal item), "supporting" (1-2 secondary items), or "backdrop" (0-1 background object placed behind hero).',
     '- appearance: "main" (colored foreground) or "background" (monochrome object behind main items).',
-    '- placement: "center" | "left" | "right" | "top-left" | "top-right" | "bottom-left" | "bottom-right" | "on-top" (use "on-top" when a small object naturally rests over a book/notebook/large surface).',
-    'Optional: if Backdrops list is provided, choose one "backdropAssetId" or null.',
-    'Rules:',
-    '1. ONLY use assetId values that exist in Catalog.',
-    '2. ONLY use backdropAssetId from Backdrops (or null).',
-    '3. Avoid duplicate assetId entries.',
-    '4. Return valid JSON strictly matching: {"backdropAssetId":"...|null","items":[{"assetId":"...","layoutRole":"hero|supporting|backdrop","appearance":"main|background","placement":"center|left|right|top-left|top-right|bottom-left|bottom-right|on-top"}]}',
+    '- placement: "center" | "top-left" | "top-right" | "bottom-left" | "bottom-right" | "left" | "right" | "on-top".',
+    'Placement rules:',
+    '1. Use "on-top" ONLY when a smaller item physically rests on a flat surface (e.g. pen, puzzles, or smartphone resting on an open book or notebook).',
+    '2. For standalone objects like lamp, vase, headphones, or wallet, NEVER use "on-top" — place them side-by-side using "top-left", "bottom-right", "left", "right", etc.',
+    '3. ONLY use assetId values from Catalog and backdropAssetId from Backdrops (or null).',
+    '4. Avoid duplicate assetId entries.',
+    '5. Return valid JSON strictly matching: {"backdropAssetId":"...|null","items":[{"assetId":"...","layoutRole":"hero|supporting|backdrop","appearance":"main|background","placement":"center|top-left|top-right|bottom-left|bottom-right|left|right|on-top"}]}',
   ].join('\n');
 }
 

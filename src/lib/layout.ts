@@ -24,6 +24,13 @@ export interface LayoutOptions {
   allAssets?: Asset[];
 }
 
+interface BoxRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 function getVisualSize(
   asset: Asset,
   detailProfile: DetailProfile,
@@ -54,32 +61,8 @@ export function getCanonicalLibraryScale(
     1
   );
   const minSide = Math.min(artboard.width, artboard.height);
-  // На холсте 1000x1000 и книге 1446px даёт ~0.58 (визуально совпадает с эталонами из Figma)
   const scale = (minSide * 0.84) / maxLibraryRef;
   return Math.max(0.1, Math.round(scale * 10000) / 10000);
-}
-
-function clampCenterToArtboard(
-  cx: number,
-  cy: number,
-  objW: number,
-  objH: number,
-  artW: number,
-  artH: number,
-  margin: number
-): { x: number; y: number } {
-  const minX = margin + objW / 2;
-  const maxX = artW - margin - objW / 2;
-  const minY = margin + objH / 2;
-  const maxY = artH - margin - objH / 2;
-
-  const x = minX <= maxX ? Math.min(Math.max(cx, minX), maxX) : artW / 2;
-  const y = minY <= maxY ? Math.min(Math.max(cy, minY), maxY) : artH / 2;
-
-  return {
-    x: Math.round(x * 100) / 100,
-    y: Math.round(y * 100) / 100,
-  };
 }
 
 function generateInstanceId(index: number, assetId: string): string {
@@ -89,8 +72,18 @@ function generateInstanceId(index: number, assetId: string): string {
   return `inst_${assetId}_${index}_${Date.now()}`;
 }
 
+function computeIntersectionArea(a: BoxRect, b: BoxRect, padding = 0): number {
+  const left = Math.max(a.x - a.width / 2 - padding, b.x - b.width / 2);
+  const right = Math.min(a.x + a.width / 2 + padding, b.x + b.width / 2);
+  const top = Math.max(a.y - a.height / 2 - padding, b.y - b.height / 2);
+  const bottom = Math.min(a.y + a.height / 2 + padding, b.y + b.height / 2);
+
+  if (right <= left || bottom <= top) return 0;
+  return (right - left) * (bottom - top);
+}
+
 /**
- * Направленные векторы по 30° изометрической сетке (cos 30° ≈ 0.866, sin 30° = 0.5).
+ * Направленные векторы по 30° изометрии.
  */
 const ISO_VECTORS: Record<
   Exclude<LayoutPlacement, 'center' | 'on-top'>,
@@ -100,11 +93,11 @@ const ISO_VECTORS: Record<
   'bottom-left': { dx: -0.866, dy: 0.5 },
   'top-left': { dx: -0.866, dy: -0.5 },
   'bottom-right': { dx: 0.866, dy: 0.5 },
-  left: { dx: -0.95, dy: 0.15 },
-  right: { dx: 0.95, dy: -0.15 },
+  left: { dx: -0.96, dy: 0.2 },
+  right: { dx: 0.96, dy: -0.2 },
 };
 
-const DEFAULT_ISO_SEQUENCE: Array<Exclude<LayoutPlacement, 'center' | 'on-top'>> = [
+const CANDIDATE_DIRS: Array<Exclude<LayoutPlacement, 'center' | 'on-top'>> = [
   'top-left',
   'bottom-right',
   'top-right',
@@ -114,11 +107,33 @@ const DEFAULT_ISO_SEQUENCE: Array<Exclude<LayoutPlacement, 'center' | 'on-top'>>
 ];
 
 /**
+ * Вычисляет позицию центра объекта B рядом с объектом A по вектору (dx, dy)
+ * так, чтобы их габариты не пересекались и имели точный зазор gap (если gap > 0).
+ */
+function placeAdjacentToBox(
+  anchor: BoxRect,
+  w: number,
+  h: number,
+  dir: { dx: number; dy: number },
+  gap: number
+): { x: number; y: number } {
+  const reqX =
+    ((anchor.width + w) / 2 + gap) / Math.max(Math.abs(dir.dx), 0.001);
+  const reqY =
+    ((anchor.height + h) / 2 + gap) / Math.max(Math.abs(dir.dy), 0.001);
+  const dist = Math.min(reqX, reqY);
+
+  return {
+    x: anchor.x + dir.dx * dist,
+    y: anchor.y + dir.dy * dist,
+  };
+}
+
+/**
  * Детерминированный изометрический Layout Engine:
- * - Нулевой поворот (сохраняет 30° изометрию).
- * - Единый канонический масштаб (пропорции объектов относительно друг друга не меняются).
- * - Плотное кластерное размещение с опорой на реальные габариты объектов.
- * - Сортировка слоёв с учётом размера и роли (мелкие объекты не тонут под крупными).
+ * - Выборочное наложение: ТОЛЬКО при явном placement === 'on-top' или лёгкий нахлёст для background-подложки.
+ * - По умолчанию все объекты стоят плотной изометрической группой с зазором без коллизий.
+ * - Весь кластер центрируется на Artboard как единое целое.
  */
 export function buildDeterministicLayout(
   inputItems: LayoutInputItem[],
@@ -132,7 +147,9 @@ export function buildDeterministicLayout(
   if (validItems.length === 0) return [];
 
   const { width: artW, height: artH } = options.artboard;
-  const margin = Math.max(20, Math.min(artW, artH) * 0.04);
+  const margin = Math.max(24, Math.min(artW, artH) * 0.05);
+  const usableW = Math.max(artW - margin * 2, 100);
+  const usableH = Math.max(artH - margin * 2, 100);
 
   const scaleSourceAssets =
     options.allAssets && options.allAssets.length > 0
@@ -143,7 +160,7 @@ export function buildDeterministicLayout(
     height: artH,
   });
 
-  // Если пришло из прямого выбора (Сценарий 2) — самым крупным делаем главный или фоновый якорь
+  // Если пришли из прямого выбора (Сценарий 2) — самым крупным делаем фокусный якорь
   const hasExplicitHero = validItems.some((i) => i.layoutRole === 'hero');
   const sortedBySizeForFallback = [...validItems].sort((a, b) => {
     const sizeA = assetsMap.get(a.assetId)!.referenceSize;
@@ -188,134 +205,191 @@ export function buildDeterministicLayout(
     (e) => !backdropObjects.includes(e) && !heroObjects.includes(e)
   );
 
-  // Если все объекты оказались фоновыми — главный фокус на самый крупный
+  // Якорь сцены: главный герой, либо фоновый якорь, если все фоновые
   const anchorEntry =
     heroObjects[0] ?? backdropObjects[0] ?? supportingObjects[0];
 
-  const placed: Array<CanvasItem & { _area: number; _layerTier: number }> = [];
+  const anchorBox: BoxRect = {
+    x: 0,
+    y: 0,
+    width: anchorEntry.size.width,
+    height: anchorEntry.size.height,
+  };
 
-  const anchorCenter = clampCenterToArtboard(
-    artW * 0.5,
-    artH * 0.52,
-    anchorEntry.size.width,
-    anchorEntry.size.height,
-    artW,
-    artH,
-    margin
-  );
+  interface DraftPlaced {
+    entry: (typeof entries)[number];
+    box: BoxRect;
+    tier: number;
+  }
 
-  let usedSlotIndex = 0;
+  const drafts: DraftPlaced[] = [];
+  const placedMainBoxes: BoxRect[] = [];
 
-  const placeItem = (
-    entry: (typeof entries)[number],
-    isAnchor: boolean,
-    tier: number
-  ) => {
+  const anchorTier =
+    anchorEntry.appearance === 'background' || anchorEntry.layoutRole === 'backdrop'
+      ? 1
+      : 2;
+
+  drafts.push({ entry: anchorEntry, box: anchorBox, tier: anchorTier });
+  if (anchorTier >= 2) {
+    placedMainBoxes.push(anchorBox);
+  }
+
+  const gapPx = Math.max(14, Math.min(artW, artH) * 0.02);
+
+  // 1. Размещаем остальные объекты
+  const remaining = [
+    ...backdropObjects.filter((e) => e !== anchorEntry),
+    ...heroObjects.filter((e) => e !== anchorEntry),
+    ...supportingObjects.filter((e) => e !== anchorEntry),
+  ];
+
+  remaining.forEach((entry, idx) => {
     const { width: w, height: h } = entry.size;
-    let targetX = anchorCenter.x;
-    let targetY = anchorCenter.y;
+    const isBgProp =
+      entry.appearance === 'background' || entry.layoutRole === 'backdrop';
+    const isSmallAccent =
+      entry.asset.referenceSize < anchorEntry.asset.referenceSize * 0.65;
 
-    if (!isAnchor) {
-      const placement = entry.placement;
+    // Случай А: AI явно запросил положить сверху на плоскую опору ("on-top")
+    if (entry.placement === 'on-top') {
+      const box: BoxRect = {
+        x: anchorBox.x - anchorBox.width * 0.05,
+        y: anchorBox.y - anchorBox.height * 0.06,
+        width: w,
+        height: h,
+      };
+      drafts.push({ entry, box, tier: 3 });
+      return;
+    }
 
-      // Маленький объект можно положить прямо на крупный якорь ("on-top")
-      const isMuchSmallerThanAnchor =
-        entry.asset.referenceSize < anchorEntry.asset.referenceSize * 0.58;
+    // Случай Б: Ставим рядом с якорем без коллизий (или с лёгким нахлёстом для background-объекта)
+    const desiredGap = isBgProp
+      ? -Math.min(anchorBox.width, w) * 0.12
+      : gapPx;
 
-      if (
-        placement === 'on-top' ||
-        (!placement &&
-          entry.layoutRole === 'supporting' &&
-          anchorEntry.appearance === 'background' &&
-          isMuchSmallerThanAnchor)
-      ) {
-        targetX = anchorCenter.x - anchorEntry.size.width * 0.06;
-        targetY = anchorCenter.y - anchorEntry.size.height * 0.08;
-      } else {
-        const dirKey =
-          placement && placement !== 'center' && placement !== 'on-top'
-            ? placement
-            : DEFAULT_ISO_SEQUENCE[usedSlotIndex % DEFAULT_ISO_SEQUENCE.length];
-        usedSlotIndex += 1;
+    const preferredDir =
+      entry.placement && entry.placement !== 'center'
+        ? entry.placement
+        : undefined;
 
-        const vec = ISO_VECTORS[dirKey];
-        // Дистанция от центра якоря: плотный кластер с небольшим перекрытием или зазором
-        const distX = (anchorEntry.size.width + w) * 0.34;
-        const distY = (anchorEntry.size.height + h) * 0.34;
+    const orderedDirs = preferredDir
+      ? [preferredDir, ...CANDIDATE_DIRS.filter((d) => d !== preferredDir)]
+      : [
+          ...CANDIDATE_DIRS.slice(idx % CANDIDATE_DIRS.length),
+          ...CANDIDATE_DIRS.slice(0, idx % CANDIDATE_DIRS.length),
+        ];
 
-        // Для фоновых объектов (тулья/блокнот сзади) делаем дистанцию чуть меньше — лёгкий нахлёст
-        const proximity =
-          entry.appearance === 'background' || entry.layoutRole === 'backdrop'
-            ? 0.78
-            : 0.92;
+    let bestBox: BoxRect | null = null;
+    let minCollision = Infinity;
 
-        targetX = anchorCenter.x + vec.dx * distX * proximity;
-        targetY = anchorCenter.y + vec.dy * distY * proximity;
+    for (const dirKey of orderedDirs) {
+      const vec = ISO_VECTORS[dirKey];
+      let candidatePos = placeAdjacentToBox(anchorBox, w, h, vec, desiredGap);
+
+      // Если объект всё ещё задевает уже стоящие главные объекты — отодвигаем чуть дальше
+      let candidateBox: BoxRect = {
+        x: candidatePos.x,
+        y: candidatePos.y,
+        width: w,
+        height: h,
+      };
+
+      if (!isBgProp) {
+        for (let step = 0; step < 3; step += 1) {
+          const hit = placedMainBoxes.some(
+            (b) => computeIntersectionArea(candidateBox, b, gapPx * 0.5) > 0
+          );
+          if (!hit) break;
+          candidatePos = {
+            x: candidatePos.x + vec.dx * (Math.min(w, h) * 0.35 + gapPx),
+            y: candidatePos.y + vec.dy * (Math.min(w, h) * 0.35 + gapPx),
+          };
+          candidateBox = { x: candidatePos.x, y: candidatePos.y, width: w, height: h };
+        }
+      }
+
+      const collisionArea = isBgProp
+        ? 0
+        : placedMainBoxes.reduce(
+            (sum, b) => sum + computeIntersectionArea(candidateBox, b, 4),
+            0
+          );
+
+      // Бонус за соответствие соотношению сторон Artboard (для широкого холста предпочитаем горизонталь)
+      const isHorizontalMove = Math.abs(vec.dx) > Math.abs(vec.dy);
+      const aspectPenalty =
+        artW > artH * 1.15 && !isHorizontalMove
+          ? 500
+          : artH > artW * 1.15 && isHorizontalMove
+            ? 500
+            : 0;
+
+      const score = collisionArea + aspectPenalty;
+      if (score < minCollision) {
+        minCollision = score;
+        bestBox = candidateBox;
+        if (collisionArea === 0 && aspectPenalty === 0) {
+          break;
+        }
       }
     }
 
-    const pos = clampCenterToArtboard(
-      targetX,
-      targetY,
-      w,
-      h,
-      artW,
-      artH,
-      margin
-    );
+    const finalBox = bestBox ?? { x: 0, y: 0, width: w, height: h };
+    const tier = isBgProp ? 1 : isSmallAccent ? 3 : 2;
 
-    placed.push({
-      instanceId: generateInstanceId(placed.length, entry.assetId),
-      assetId: entry.assetId,
-      appearance: entry.appearance,
-      layoutRole: entry.layoutRole,
-      x: pos.x,
-      y: pos.y,
-      scale: canonicalScale,
-      rotation: 0, // Сохраняем строгую изометрическую перспективу без наклона
-      zIndex: 0,
-      _area: w * h,
-      _layerTier: tier,
-    });
-  };
+    drafts.push({ entry, box: finalBox, tier });
+    if (!isBgProp) {
+      placedMainBoxes.push(finalBox);
+    }
+  });
 
-  // 1. Размещаем якорь (tier зависит от того, фон это или герой)
-  placeItem(
-    anchorEntry,
-    true,
-    anchorEntry.appearance === 'background' || anchorEntry.layoutRole === 'backdrop'
-      ? 1
-      : 2
+  // 2. Считаем общий габарит всей собранной группы и вписываем её в центр Artboard
+  const minX = Math.min(...drafts.map((d) => d.box.x - d.box.width / 2));
+  const maxX = Math.max(...drafts.map((d) => d.box.x + d.box.width / 2));
+  const minY = Math.min(...drafts.map((d) => d.box.y - d.box.height / 2));
+  const maxY = Math.max(...drafts.map((d) => d.box.y + d.box.height / 2));
+
+  const clusterW = Math.max(maxX - minX, 1);
+  const clusterH = Math.max(maxY - minY, 1);
+  const clusterCenterX = (minX + maxX) / 2;
+  const clusterCenterY = (minY + maxY) / 2;
+
+  // Если группа целиком шире или выше Artboard — сжимаем её всю целиком равномерным fitK
+  const fitK = Math.min(usableW / clusterW, usableH / clusterH, 1);
+  const finalScale = Math.max(
+    0.1,
+    Math.round(canonicalScale * fitK * 10000) / 10000
   );
 
-  // 2. Размещаем остальные фоновые объекты (нижний слой)
-  for (const bg of backdropObjects) {
-    if (bg === anchorEntry) continue;
-    placeItem(bg, false, 1);
-  }
+  // 3. Сортируем слои и переводим в координаты Artboard
+  const positioned = drafts.map((d, idx) => {
+    const x =
+      artW / 2 + (d.box.x - clusterCenterX) * fitK;
+    const y =
+      artH / 2 + (d.box.y - clusterCenterY) * fitK;
 
-  // 3. Размещаем остальных героев (если вдруг >1) и вспомогательные объекты
-  for (const h of heroObjects) {
-    if (h === anchorEntry) continue;
-    placeItem(h, false, 2);
-  }
-  for (const s of supportingObjects) {
-    if (s === anchorEntry) continue;
-    // Очень маленькие предметы (замок, ручка, пазлы) поднимаем выше по z-index, чтобы не тонули за книгой
-    const isSmallAccent =
-      s.asset.referenceSize < anchorEntry.asset.referenceSize * 0.65;
-    placeItem(s, false, isSmallAccent ? 3 : 2);
-  }
+    return {
+      instanceId: generateInstanceId(idx, d.entry.assetId),
+      assetId: d.entry.assetId,
+      appearance: d.entry.appearance,
+      layoutRole: d.entry.layoutRole,
+      x: Math.round(x * 100) / 100,
+      y: Math.round(y * 100) / 100,
+      scale: finalScale,
+      rotation: 0,
+      zIndex: 0,
+      _tier: d.tier,
+      _area: d.box.width * d.box.height,
+    };
+  });
 
-  // Сортируем слои: сначала нижний tier (backdrop/background), внутри одного tier — крупные сзади, мелкие спереди
-  placed.sort((a, b) => {
-    if (a._layerTier !== b._layerTier) {
-      return a._layerTier - b._layerTier;
-    }
+  positioned.sort((a, b) => {
+    if (a._tier !== b._tier) return a._tier - b._tier;
     return b._area - a._area;
   });
 
-  return placed.map(({ _area: _, _layerTier: __, ...item }, index) => ({
+  return positioned.map(({ _tier: _, _area: __, ...item }, index) => ({
     ...item,
     zIndex: index,
   }));
