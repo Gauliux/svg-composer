@@ -91,6 +91,8 @@ export interface CompositionDocument {
   };
   /** Заливка самого Artboard: только фоновые токены или прозрачный (alpha) */
   backgroundFill: 'none' | BgColorToken;
+  /** ID фонового шаблона (например, B01, B02) или null — только заливка */
+  backdropAssetId: string | null;
   detailProfile: DetailProfile;
   paletteId: string;
   items: CanvasItem[];

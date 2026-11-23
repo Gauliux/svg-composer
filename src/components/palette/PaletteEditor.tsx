@@ -3,6 +3,7 @@
 import React, { useRef, useState } from 'react';
 import { Copy, Download, Palette, Plus, Trash2, Upload } from 'lucide-react';
 import {
+  Asset,
   BG_TOKENS,
   BgColorToken,
   ColorScheme,
@@ -20,6 +21,9 @@ interface PaletteEditorProps {
   onDeleteScheme: (id: string) => void;
   backgroundFill: 'none' | BgColorToken;
   onChangeBackgroundFill: (fill: 'none' | BgColorToken) => void;
+  backdropAssets: Asset[];
+  backdropAssetId: string | null;
+  onChangeBackdrop: (id: string | null) => void;
 }
 
 export function PaletteEditor({
@@ -31,6 +35,9 @@ export function PaletteEditor({
   onDeleteScheme,
   backgroundFill,
   onChangeBackgroundFill,
+  backdropAssets,
+  backdropAssetId,
+  onChangeBackdrop,
 }: PaletteEditorProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
@@ -279,6 +286,42 @@ export function PaletteEditor({
           ))}
         </div>
       </div>
+
+      {/* Декоративные фоновые шаблоны (B01, B02 и т.д.) */}
+      {backdropAssets.length > 0 && (
+        <div>
+          <span className="mb-1 block text-[11px] font-medium text-slate-500">
+            Декор фона
+          </span>
+          <div className="flex flex-wrap gap-1">
+            <button
+              type="button"
+              onClick={() => onChangeBackdrop(null)}
+              className={`rounded-lg border px-2.5 py-1 text-[11px] font-medium transition ${
+                backdropAssetId === null
+                  ? 'border-indigo-600 bg-indigo-50 text-indigo-700'
+                  : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+              }`}
+            >
+              Только заливка
+            </button>
+            {backdropAssets.map((bg) => (
+              <button
+                key={bg.id}
+                type="button"
+                onClick={() => onChangeBackdrop(bg.id)}
+                className={`rounded-lg border px-2.5 py-1 text-[11px] font-medium transition ${
+                  backdropAssetId === bg.id
+                    ? 'border-indigo-600 bg-indigo-50 text-indigo-700'
+                    : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                }`}
+              >
+                {bg.title}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <button
         type="button"

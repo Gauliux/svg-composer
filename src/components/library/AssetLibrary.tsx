@@ -79,10 +79,19 @@ export function AssetLibrary({
   const [category, setCategory] = useState('all');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
-  const categories = useMemo(() => extractCategories(assets), [assets]);
+  // Показываем в библиотеке только предметные объекты (фоны выбираются в PaletteEditor)
+  const objectAssets = useMemo(
+    () => assets.filter((a) => a.category !== 'background'),
+    [assets]
+  );
+
+  const categories = useMemo(
+    () => extractCategories(objectAssets),
+    [objectAssets]
+  );
   const filteredAssets = useMemo(
-    () => searchAssets(assets, query, category),
-    [assets, query, category]
+    () => searchAssets(objectAssets, query, category),
+    [objectAssets, query, category]
   );
 
   const toggleSelect = (id: string) => {

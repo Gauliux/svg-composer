@@ -17,6 +17,10 @@ import {
   FabricComposerObject,
   recolorCanvas,
 } from '@/lib/fabric';
+import {
+  createAdaptiveBackdropObjects,
+  recolorBackdropObjects,
+} from '@/lib/backdrop';
 
 export interface CanvasEditorHandle {
   exportSvg: () => string | null;
@@ -65,6 +69,7 @@ export const CanvasEditor = React.forwardRef<
   const canvasElRef = useRef<HTMLCanvasElement | null>(null);
   const fabricRef = useRef<Canvas | null>(null);
   const renderedMetaRef = useRef<Map<string, RenderedMeta>>(new Map());
+  const lastBackdropKeyRef = useRef<string>('');
   const syncInProgressRef = useRef(false);
 
   const [containerSize, setContainerSize] = useState({ width: 800, height: 600 });
@@ -209,6 +214,7 @@ export const CanvasEditor = React.forwardRef<
       metaMap.clear();
       canvas.dispose();
       fabricRef.current = null;
+      lastBackdropKeyRef.current = '';
     };
   }, []);
 
@@ -235,7 +241,7 @@ export const CanvasEditor = React.forwardRef<
     canvas.requestRenderAll();
   }, [containerSize, doc.artboard.width, doc.artboard.height]);
 
-  // 4. Синхронизация объектов CompositionDocument <-> Fabric Canvas
+  // 4. Синхронизация объектов CompositionDocument <-> Fabric Canvas (включая адаптивный фон)
   useEffect(() => {
     const canvas = fabricRef.current;
     if (!canvas) return;
@@ -247,11 +253,42 @@ export const CanvasEditor = React.forwardRef<
       syncInProgressRef.current = true;
 
       try {
+        // --- A. Адаптивный угловой фон Artboard ---
+        const backdropKey = `${doc.backdropAssetId ?? 'none'}_${doc.detailProfile}_${doc.artboard.width}x${doc.artboard.height}`;
+        if (backdropKey !== lastBackdropKeyRef.current) {
+          for (const obj of [...canvas.getObjects()]) {
+            if ((obj as FabricObject & { __isBackdrop?: boolean }).__isBackdrop) {
+              canvas.remove(obj);
+            }
+          }
+
+          if (doc.backdropAssetId) {
+            const bgAsset = assetsMap.get(doc.backdropAssetId);
+            if (bgAsset) {
+              const backdropObjs = await createAdaptiveBackdropObjects(
+                bgAsset,
+                doc.detailProfile,
+                activeScheme,
+                doc.artboard
+              );
+              if (cancelled) return;
+              for (const bObj of backdropObjs) {
+                canvas.add(bObj);
+              }
+            }
+          }
+          lastBackdropKeyRef.current = backdropKey;
+        }
+
+        // --- B. Предметные объекты сцены ---
         const sortedItems = [...doc.items].sort((a, b) => a.zIndex - b.zIndex);
         const targetIds = new Set(sortedItems.map((i) => i.instanceId));
 
-        // Удаляем объекты, которых больше нет в документе
+        // Удаляем старые предметы, НЕ трогая __isBackdrop
         for (const obj of [...canvas.getObjects()]) {
+          if ((obj as FabricObject & { __isBackdrop?: boolean }).__isBackdrop) {
+            continue;
+          }
           const composerObj = obj as FabricComposerObject;
           if (!composerObj.__instanceId || !targetIds.has(composerObj.__instanceId)) {
             canvas.remove(composerObj);
@@ -261,9 +298,12 @@ export const CanvasEditor = React.forwardRef<
           }
         }
 
-        // Индексируем оставшиеся объекты
+        // Индексируем оставшиеся предметы
         const existingMap = new Map<string, FabricComposerObject>();
         for (const obj of canvas.getObjects()) {
+          if ((obj as FabricObject & { __isBackdrop?: boolean }).__isBackdrop) {
+            continue;
+          }
           const cObj = obj as FabricComposerObject;
           if (cObj.__instanceId) {
             existingMap.set(cObj.__instanceId, cObj);
@@ -307,7 +347,6 @@ export const CanvasEditor = React.forwardRef<
               detailProfile: doc.detailProfile,
             });
           } else if (existingObj) {
-            // Мягкое обновление трансформаций без пересоздания SVG
             const norm = existingObj.__normalizationFactor || 1;
             const targetScale = item.scale * norm;
             const eps = 0.01;
@@ -330,15 +369,23 @@ export const CanvasEditor = React.forwardRef<
           }
         }
 
-        // Выставляем порядок слоёв согласно sortedItems
+        // Выставляем порядок слоёв: сначала весь фон (0..backdropCount-1), затем объекты
+        const backdropObjs = canvas
+          .getObjects()
+          .filter((o) => Boolean((o as FabricObject & { __isBackdrop?: boolean }).__isBackdrop));
+
+        backdropObjs.forEach((bObj, idx) => {
+          canvas.moveObjectTo(bObj, idx);
+        });
+
         sortedItems.forEach((item, idx) => {
           const obj = existingMap.get(item.instanceId);
           if (obj) {
-            canvas.moveObjectTo(obj, idx);
+            canvas.moveObjectTo(obj, backdropObjs.length + idx);
           }
         });
 
-        // Восстанавливаем выделение, если оно пришло из панели слоёв
+        // Восстанавливаем выделение
         if (selectedInstanceId) {
           const toSelect = existingMap.get(selectedInstanceId);
           const currentActive = canvas.getActiveObject() as
@@ -347,7 +394,10 @@ export const CanvasEditor = React.forwardRef<
           if (toSelect && currentActive?.__instanceId !== selectedInstanceId) {
             canvas.setActiveObject(toSelect);
           }
-        } else if (canvas.getActiveObject() && !(canvas.getActiveObject() instanceof ActiveSelection)) {
+        } else if (
+          canvas.getActiveObject() &&
+          !(canvas.getActiveObject() instanceof ActiveSelection)
+        ) {
           canvas.discardActiveObject();
         }
 
@@ -361,10 +411,17 @@ export const CanvasEditor = React.forwardRef<
     return () => {
       cancelled = true;
     };
-  }, [doc.items, doc.detailProfile, assetsMap, activeScheme, selectedInstanceId]);
+  }, [
+    doc.items,
+    doc.detailProfile,
+    doc.backdropAssetId,
+    doc.artboard,
+    assetsMap,
+    activeScheme,
+    selectedInstanceId,
+  ]);
 
-  // 5. Мгновенная перекраска при смене палитры без пересоздания объектов
-  // 5. Мгновенная перекраска при смене палитры и фона холста
+  // 5. Мгновенная перекраска при смене палитры и заливки Artboard
   useEffect(() => {
     const canvas = fabricRef.current;
     if (!canvas) return;
@@ -373,6 +430,8 @@ export const CanvasEditor = React.forwardRef<
         ? ''
         : activeScheme.background[doc.backgroundFill];
     recolorCanvas(canvas, activeScheme);
+    recolorBackdropObjects(canvas.getObjects(), activeScheme);
+    canvas.requestRenderAll();
   }, [activeScheme, doc.backgroundFill]);
 
   // 6. Горячие клавиши: Ctrl+D (дублировать) и Delete/Backspace (удалить)

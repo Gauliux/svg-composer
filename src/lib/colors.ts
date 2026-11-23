@@ -164,3 +164,29 @@ export function resolveColorFromScheme(
   }
   return scheme.objects[token];
 }
+
+/**
+ * Ищет токен сначала в основной карте (Палитра 1 / manifest.colorMapping),
+ * а если цвет не найден — проверяет остальные предустановленные палитры (например, для Фона 2).
+ */
+export function resolveTokenForSourceColor(
+  normalizedHex: string,
+  primaryMap: Record<string, ColorToken>
+): ColorToken | undefined {
+  if (primaryMap[normalizedHex]) {
+    return primaryMap[normalizedHex];
+  }
+  for (const scheme of PRESET_COLOR_SCHEMES) {
+    for (const token of BG_TOKENS) {
+      if (normalizeColor(scheme.background[token]) === normalizedHex) {
+        return token;
+      }
+    }
+    for (const token of OBJ_TOKENS) {
+      if (normalizeColor(scheme.objects[token]) === normalizedHex) {
+        return token;
+      }
+    }
+  }
+  return undefined;
+}

@@ -8,6 +8,7 @@ export interface AiSuggestedItem {
 
 export interface AiComposeResult {
   model: string;
+  backdropAssetId: string | null;
   items: AiSuggestedItem[];
 }
 
@@ -15,18 +16,24 @@ export async function generateCompositionByMetaphor(
   prompt: string,
   assets: Asset[]
 ): Promise<AiComposeResult> {
+  const objectAssets = assets.filter((a) => a.category !== 'background');
+  const backdrops = assets
+    .filter((a) => a.category === 'background')
+    .map((a) => ({ id: a.id, title: a.title }));
+
   const res = await fetch('/api/compose', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       prompt,
-      assets: assets.map((a) => ({
+      assets: objectAssets.map((a) => ({
         id: a.id,
         title: a.title,
         description: a.description,
         tags: a.tags,
         category: a.category,
       })),
+      backdrops,
     }),
   });
 

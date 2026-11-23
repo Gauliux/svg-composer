@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { AlertCircle, Loader2, Wand2 } from 'lucide-react';
 import { Asset } from '@/types';
-import { AiSuggestedItem, generateCompositionByMetaphor } from '@/lib/ollama';
+import { AiComposeResult, generateCompositionByMetaphor } from '@/lib/ollama';
 
 const EXAMPLE_PROMPTS = [
   'Безопасность данных и цифровые технологии',
@@ -13,7 +13,7 @@ const EXAMPLE_PROMPTS = [
 
 interface CompositionGeneratorProps {
   assets: Asset[];
-  onApplyAiComposition: (items: AiSuggestedItem[]) => void;
+  onApplyAiComposition: (result: AiComposeResult) => void;
 }
 
 export function CompositionGenerator({
@@ -34,7 +34,7 @@ export function CompositionGenerator({
     try {
       const result = await generateCompositionByMetaphor(prompt.trim(), assets);
       setLastModel(result.model);
-      onApplyAiComposition(result.items);
+      onApplyAiComposition(result);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : 'Ошибка генерации композиции'

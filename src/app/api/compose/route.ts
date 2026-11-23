@@ -15,20 +15,31 @@ const requestBodySchema = z.object({
       })
     )
     .min(1),
+  backdrops: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        title: z.string().min(1),
+      })
+    )
+    .optional()
+    .default([]),
 });
 
 function buildCompactSystemPrompt(): string {
   return [
     'You are an illustration art director.',
-    'Select 3 to 5 existing asset IDs from the provided catalog that best match the user metaphor or title.',
+    'Select 3 to 5 existing asset IDs from the provided Catalog that best match the user metaphor or title.',
     'Assign each item:',
-    '- layoutRole: "hero" (1 main focal item), "supporting" (1-3 secondary items), or "backdrop" (0-2 background decorative items).',
+    '- layoutRole: "hero" (1 main focal item), "supporting" (1-3 secondary items), or "backdrop" (0-2 background prop items).',
     '- appearance: "main" (colored foreground) or "background" (monochrome background).',
+    'Optional: if Backdrops list is provided, choose one "backdropAssetId" from it or null for a plain solid fill.',
     'Rules:',
-    '1. ONLY use assetId values that exist in the catalog.',
-    '2. Do NOT invent new IDs, SVG code, or coordinates.',
-    '3. Avoid duplicate assetId entries.',
-    '4. Return valid JSON strictly matching: {"items":[{"assetId":"...","layoutRole":"hero|supporting|backdrop","appearance":"main|background"}]}',
+    '1. ONLY use assetId values that exist in Catalog.',
+    '2. ONLY use backdropAssetId from Backdrops (or null).',
+    '3. Do NOT invent new IDs, SVG code, or coordinates.',
+    '4. Avoid duplicate assetId entries.',
+    '5. Return valid JSON strictly matching: {"backdropAssetId":"...|null","items":[{"assetId":"...","layoutRole":"hero|supporting|backdrop","appearance":"main|background"}]}',
   ].join('\n');
 }
 
@@ -51,13 +62,12 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { prompt, assets } = parsedRequest.data;
+  const { prompt, assets, backdrops } = parsedRequest.data;
   const ollamaUrl = (
     process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434'
   ).replace(/\/+$/, '');
   const ollamaModel = process.env.OLLAMA_MODEL || 'qwen2.5:7b';
 
-  // Минималистичный формат каталога для экономии токенов (4-8k контекст)
   const compactCatalog = assets.map((a) => ({
     id: a.id,
     title: a.title,
@@ -65,7 +75,9 @@ export async function POST(req: NextRequest) {
     ...(a.category ? { category: a.category } : {}),
   }));
 
-  const userMessage = `Catalog:\n${JSON.stringify(compactCatalog)}\n\nUser metaphor/title: "${prompt}"`;
+  const backdropPart =
+    backdrops.length > 0 ? `\nBackdrops:\n${JSON.stringify(backdrops)}` : '';
+  const userMessage = `Catalog:\n${JSON.stringify(compactCatalog)}${backdropPart}\n\nUser metaphor/title: "${prompt}"`;
 
   let ollamaRes: Response;
   try {
@@ -78,7 +90,7 @@ export async function POST(req: NextRequest) {
         format: 'json',
         options: {
           temperature: 0.2,
-          num_predict: 350,
+          num_predict: 380,
         },
         messages: [
           { role: 'system', content: buildCompactSystemPrompt() },
@@ -118,7 +130,6 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Извлекаем JSON даже если модель обернула его в ```json ... ```
   const jsonText = rawContent
     .replace(/^```(?:json)?\s*/i, '')
     .replace(/\s*```$/, '')
@@ -142,7 +153,6 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Программная очистка: оставляем только существующие assetId и убираем дубликаты
   const validIds = new Set(assets.map((a) => a.id));
   const seen = new Set<string>();
   const cleanItems = validated.data.items.filter((item) => {
@@ -163,13 +173,18 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Гарантируем наличие хотя бы одного hero, если модель вернула только supporting
   if (!cleanItems.some((item) => item.layoutRole === 'hero')) {
     cleanItems[0].layoutRole = 'hero';
   }
 
+  const validBackdropIds = new Set(backdrops.map((b) => b.id));
+  const rawBackdropId = validated.data.backdropAssetId;
+  const cleanBackdropId =
+    rawBackdropId && validBackdropIds.has(rawBackdropId) ? rawBackdropId : null;
+
   return NextResponse.json({
     model: ollamaModel,
+    backdropAssetId: cleanBackdropId,
     items: cleanItems,
   });
 }

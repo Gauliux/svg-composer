@@ -26,7 +26,7 @@ import {
   saveCustomColorSchemes,
 } from '@/lib/storage';
 import { buildDeterministicLayout } from '@/lib/layout';
-import { AiSuggestedItem } from '@/lib/ollama';
+import { AiComposeResult } from '@/lib/ollama';
 import {
   CanvasEditor,
   CanvasEditorHandle,
@@ -48,7 +48,8 @@ function createEmptyDocument(): CompositionDocument {
     items: [],
     createdAt: 0,
     updatedAt: 0,
-    backgroundFill: 'BG_1'
+    backgroundFill: 'BG_1',
+    backdropAssetId: null,
   };
 }
 
@@ -65,6 +66,11 @@ export default function HomePage() {
   const [statusNotice, setStatusNotice] = useState<string | null>(null);
   const [leftTab, setLeftTab] = useState<'library' | 'import'>('library');
 
+  const backdropAssets = useMemo(
+    () => assets.filter((a) => a.category === 'background'),
+    [assets]
+  );
+  
   const assetsMap = useMemo(
     () => new Map(assets.map((a) => [a.id, a])),
     [assets]
@@ -229,14 +235,19 @@ export default function HomePage() {
 
   // Сценарий 1: AI-подбор по метафоре
   const handleApplyAiComposition = useCallback(
-    (suggested: AiSuggestedItem[]) => {
-      const placed = buildDeterministicLayout(suggested, assetsMap, {
+    (result: AiComposeResult) => {
+      const placed = buildDeterministicLayout(result.items, assetsMap, {
         artboard: doc.artboard,
         detailProfile: doc.detailProfile,
       });
       setDoc((prev) => ({
         ...prev,
         items: placed,
+        backdropAssetId: result.backdropAssetId,
+        backgroundFill:
+          prev.backgroundFill === 'none' && result.backdropAssetId
+            ? 'BG_1'
+            : prev.backgroundFill,
         updatedAt: Date.now(),
       }));
       setSelectedInstanceId(null);
@@ -489,7 +500,7 @@ export default function HomePage() {
                   : 'text-slate-500 hover:text-slate-800'
               }`}
             >
-              Библиотека ({assets.length})
+              Библиотека ({assets.filter((a) => a.category !== 'background').length})
             </button>
             <button
               type="button"
@@ -553,9 +564,14 @@ export default function HomePage() {
             onUpdateScheme={handleUpdateScheme}
             onCreateScheme={handleCreateScheme}
             onDeleteScheme={handleDeleteScheme}
-	    backgroundFill={doc.backgroundFill}
+            backgroundFill={doc.backgroundFill}
             onChangeBackgroundFill={(backgroundFill) =>
               setDoc((prev) => ({ ...prev, backgroundFill, updatedAt: Date.now() }))
+            }
+            backdropAssets={backdropAssets}
+            backdropAssetId={doc.backdropAssetId}
+            onChangeBackdrop={(backdropAssetId) =>
+              setDoc((prev) => ({ ...prev, backdropAssetId, updatedAt: Date.now() }))
             }
           />
 

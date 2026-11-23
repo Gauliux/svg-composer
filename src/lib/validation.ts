@@ -6,7 +6,7 @@ import {
   ColorToken,
   PathColorBinding,
 } from '@/types';
-import { isTokenAllowedForAppearance, normalizeColor } from './colors';
+import { resolveTokenForSourceColor, isTokenAllowedForAppearance, normalizeColor } from './colors';
 
 const hexColorSchema = z
   .string()
@@ -60,6 +60,7 @@ export const manifestSchema = z.object({
 });
 
 export const aiCompositionResponseSchema = z.object({
+  backdropAssetId: z.string().nullable().optional(),
   items: z
     .array(
       z.object({
@@ -75,6 +76,8 @@ export const aiCompositionResponseSchema = z.object({
 const ALLOWED_ELEMENTS = new Set([
   'svg',
   'g',
+  'defs',
+  'clippath',
   'path',
   'rect',
   'circle',
@@ -86,10 +89,16 @@ const ALLOWED_ELEMENTS = new Set([
 
 const ALLOWED_ATTRS = new Set([
   'xmlns',
+  'id',
   'width',
   'height',
   'viewbox',
   'fill',
+  'stroke',
+  'stroke-width',
+  'stroke-linecap',
+  'stroke-linejoin',
+  'clip-path',
   'd',
   'x',
   'y',
@@ -107,10 +116,6 @@ const ALLOWED_ATTRS = new Set([
   'fill-rule',
   'clip-rule',
   'data-token',
-  'stroke',
-  'stroke-width',
-  'stroke-linecap',
-  'stroke-linejoin',
 ]);
 
 export interface ParsedSvgResult {
@@ -208,10 +213,10 @@ export function parseAndValidateSvg(
   const viewBox =
     root.getAttribute('viewBox') ?? `0 0 ${bounds.width} ${bounds.height}`;
 
-  // Собираем все векторные примитивы (в демо-библиотеке это <path>)
+  // Собираем все векторные примитивы
   const shapeElements = Array.from(
     root.querySelectorAll('path, rect, circle, ellipse, polygon, polyline, line')
-  );
+  ).filter((el) => !el.closest('defs'));
 
   const colorBindings: PathColorBinding[] = [];
   const unknownColorsSet = new Set<string>();
@@ -246,7 +251,7 @@ export function parseAndValidateSvg(
         return;
       }
 
-      const mappedToken = colorMapping[normalized];
+      const mappedToken = resolveTokenForSourceColor(normalized, colorMapping);
       if (!mappedToken) {
         unknownColorsSet.add(normalized);
         return;
